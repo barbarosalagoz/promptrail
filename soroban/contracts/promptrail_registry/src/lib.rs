@@ -107,16 +107,10 @@ impl PromptRailRegistry {
     pub fn get(env: Env, owner: Address) -> Result<Endpoint, RegistryError> {
         let key = DataKey::Endpoint(owner);
 
-        let endpoint: Option<Endpoint> = env.storage().persistent().get(&key);
-
-        match endpoint {
-            Some(value) => {
-                extend_entry_ttl(&env, &key);
-                extend_contract_ttl(&env);
-                Ok(value)
-            }
-            None => Err(RegistryError::EndpointNotFound),
-        }
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::EndpointNotFound)
     }
 
     pub fn update_price(
