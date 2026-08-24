@@ -608,3 +608,227 @@ footer {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* PAYMENT FORM */
+
+.payment-form {
+  margin-top: 18px;
+  padding: 20px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  border: 1px solid #2a2f3d;
+  border-radius: 14px;
+
+  background: #0c0f16;
+
+  text-align: left;
+}
+
+.payment-heading {
+  margin-bottom: 2px;
+}
+
+.payment-eyebrow {
+  color: #a78bfa;
+
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.payment-heading h4 {
+  margin: 7px 0 5px;
+
+  color: #f7f7fb;
+
+  font-size: 18px;
+}
+
+.payment-heading p {
+  margin: 0;
+
+  color: #747a88;
+
+  font-size: 12px;
+}
+
+.payment-form label {
+  display: flex;
+  flex-direction: column;
+
+  gap: 7px;
+
+  color: #969caa;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  letter-spacing: 0.04em;
+}
+
+.payment-form input {
+  width: 100%;
+
+  padding: 13px 14px;
+
+  border: 1px solid #2b303d;
+  border-radius: 10px;
+
+  outline: none;
+
+  background: #090c12;
+
+  color: #f7f7fb;
+
+  font-family: inherit;
+}
+
+.payment-form input:focus {
+  border-color: #8b5cf6;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(139, 92, 246, 0.1);
+}
+
+.payment-form input::placeholder {
+  color: #4d5360;
+}
+
+.amount-input {
+  position: relative;
+}
+
+.amount-input input {
+  padding-right: 55px;
+}
+
+.amount-input span {
+  position: absolute;
+
+  top: 50%;
+  right: 14px;
+
+  transform: translateY(-50%);
+
+  color: #8c92a0;
+
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* TRANSACTION RESULTS */
+
+.transaction-result {
+  margin-top: 18px;
+  padding: 16px;
+
+  display: flex;
+  align-items: flex-start;
+
+  gap: 12px;
+
+  border-radius: 12px;
+
+  text-align: left;
+}
+
+.transaction-success {
+  border:
+    1px solid
+    rgba(72, 224, 164, 0.28);
+
+  background:
+    rgba(72, 224, 164, 0.06);
+}
+
+.transaction-failure {
+  border:
+    1px solid
+    rgba(248, 113, 113, 0.28);
+
+  background:
+    rgba(248, 113, 113, 0.06);
+}
+
+.result-icon {
+  width: 28px;
+  height: 28px;
+
+  flex: 0 0 auto;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 50%;
+
+  font-weight: 800;
+}
+
+.transaction-success .result-icon {
+  background:
+    rgba(72, 224, 164, 0.12);
+
+  color: #6ee7b7;
+}
+
+.transaction-failure .result-icon {
+  background:
+    rgba(248, 113, 113, 0.12);
+
+  color: #fca5a5;
+}
+
+.transaction-result strong {
+  color: #f7f7fb;
+
+  font-size: 13px;
+}
+
+.transaction-result p {
+  margin: 5px 0 10px;
+
+  color: #8d93a1;
+
+  font-size: 11px;
+
+  line-height: 1.5;
+}
+
+.hash-label {
+  display: block;
+
+  margin-bottom: 5px;
+
+  color: #686e7c;
+
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.transaction-result code {
+  display: block;
+
+  margin-bottom: 9px;
+
+  color: #c4b5fd;
+
+  font-size: 10px;
+}
+
+.transaction-result a {
+  color: #a78bfa;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  text-decoration: none;
+}
+
+.transaction-result a:hover {
+  color: #c4b5fd;
+}
