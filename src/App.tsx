@@ -4,7 +4,12 @@ import {
   requestAccess,
   getNetworkDetails,
 } from "@stellar/freighter-api";
+import { Horizon } from "@stellar/stellar-sdk";
 import "./App.css";
+
+const horizonServer = new Horizon.Server(
+  "https://horizon-testnet.stellar.org"
+);
 
 function App() {
   const [freighterInstalled, setFreighterInstalled] = useState<boolean | null>(
@@ -16,6 +21,10 @@ function App() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const [network, setNetwork] = useState<string | null>(null);
+
+  const [xlmBalance, setXlmBalance] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkFreighter = async () => {
@@ -58,10 +67,55 @@ function App() {
     }
   };
 
+  const fetchBalance = async (address: string) => {
+    try {
+      setBalanceLoading(true);
+      setBalanceError(null);
+
+      const account = await horizonServer.loadAccount(address);
+
+      const nativeBalance = account.balances.find(
+        (balance) => balance.asset_type === "native"
+      );
+
+      if (!nativeBalance) {
+        setXlmBalance("0");
+        return;
+      }
+
+      setXlmBalance(nativeBalance.balance);
+    } catch (error) {
+      console.error("Balance fetch failed:", error);
+
+      setXlmBalance(null);
+
+      const status = (
+        error as {
+          response?: {
+            status?: number;
+          };
+        }
+      )?.response?.status;
+
+      if (status === 404) {
+        setBalanceError(
+          "This wallet is not funded on Stellar Testnet yet."
+        );
+      } else {
+        setBalanceError(
+          "Could not fetch your XLM balance from Stellar Testnet."
+        );
+      }
+    } finally {
+      setBalanceLoading(false);
+    }
+  };
+
   const connectWallet = async () => {
     try {
       setConnecting(true);
       setConnectionError(null);
+      setBalanceError(null);
 
       const connectionResult = await isConnected();
 
@@ -90,10 +144,16 @@ function App() {
       const activeNetwork = await checkNetwork();
 
       if (activeNetwork !== "TESTNET") {
+        setXlmBalance(null);
+
         setConnectionError(
           `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
         );
+
+        return;
       }
+
+      await fetchBalance(accessResult.address);
     } catch (error) {
       console.error("Wallet connection failed:", error);
 
@@ -111,24 +171,43 @@ function App() {
     setWalletAddress(null);
     setNetwork(null);
     setConnectionError(null);
+    setXlmBalance(null);
+    setBalanceError(null);
   };
 
   const recheckNetwork = async () => {
     try {
       setConnectionError(null);
+      setBalanceError(null);
 
       const activeNetwork = await checkNetwork();
 
       if (activeNetwork !== "TESTNET") {
+        setXlmBalance(null);
+
         setConnectionError(
           `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
         );
+
+        return;
+      }
+
+      if (walletAddress) {
+        await fetchBalance(walletAddress);
       }
     } catch {
       setConnectionError(
         "Could not check the active Stellar network."
       );
     }
+  };
+
+  const refreshBalance = async () => {
+    if (!walletAddress || network !== "TESTNET") {
+      return;
+    }
+
+    await fetchBalance(walletAddress);
   };
 
   const isTestnet = network === "TESTNET";
@@ -203,10 +282,64 @@ function App() {
               </strong>
             </div>
 
+            {isTestnet && (
+              <div className="balance-panel">
+                <span className="balance-label">
+                  XLM BALANCE
+                </span>
+
+                {balanceLoading ? (
+                  <strong className="balance-value">
+                    Loading...
+                  </strong>
+                ) : xlmBalance ? (
+                  <>
+                    <strong className="balance-value">
+                      {Number(xlmBalance).toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 7,
+                        }
+                      )}{" "}
+                      XLM
+                    </strong>
+
+                    <span className="balance-caption">
+                      Stellar Testnet balance
+                    </span>
+                  </>
+                ) : (
+                  <strong className="balance-value">
+                    — XLM
+                  </strong>
+                )}
+
+                <button
+                  className="balance-refresh"
+                  onClick={refreshBalance}
+                  disabled={balanceLoading}
+                >
+                  {balanceLoading
+                    ? "Refreshing..."
+                    : "Refresh Balance"}
+                </button>
+              </div>
+            )}
+
+            {balanceError && (
+              <div className="balance-error">
+                <strong>Wallet not funded</strong>
+                <span>{balanceError}</span>
+              </div>
+            )}
+
             {network && (
               <div
                 className={`network-panel ${
-                  isTestnet ? "network-panel-good" : "network-panel-wrong"
+                  isTestnet
+                    ? "network-panel-good"
+                    : "network-panel-wrong"
                 }`}
               >
                 <span className="network-panel-label">
@@ -214,7 +347,9 @@ function App() {
                 </span>
 
                 <strong>
-                  {isTestnet ? "✓ Stellar Testnet" : `⚠ ${network}`}
+                  {isTestnet
+                    ? "✓ Stellar Testnet"
+                    : `⚠ ${network}`}
                 </strong>
 
                 <span>
