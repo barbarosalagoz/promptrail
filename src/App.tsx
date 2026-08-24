@@ -12,6 +12,10 @@ import {
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
 
+import type {
+  Endpoint,
+} from "promptrail_registry";
+
 import {
   connectWallet as connectStellarWallet,
   disconnectWallet as disconnectStellarWallet,
@@ -21,33 +25,63 @@ import {
   SUPPORTED_WALLETS,
 } from "./services/wallet";
 
+import {
+  getRegistryEntry,
+  registerRegistryEntry,
+  REGISTRY_CONTRACT_ID,
+  type RegistryTxStatus,
+} from "./services/registry";
+
 import "./App.css";
 
-const horizonServer = new Horizon.Server(
-  "https://horizon-testnet.stellar.org",
-);
+const horizonServer =
+  new Horizon.Server(
+    "https://horizon-testnet.stellar.org",
+  );
 
-const STROOPS_PER_XLM = 10_000_000n;
+const STROOPS_PER_XLM =
+  10_000_000n;
 
-function xlmToStroops(value: string): bigint | null {
-  const cleanValue = value.trim();
+const MAX_REGISTRY_PRICE_STROOPS =
+  1_000_000_000_000n;
 
-  if (!/^\d+(?:\.\d{1,7})?$/.test(cleanValue)) {
+function xlmToStroops(
+  value: string,
+): bigint | null {
+  const cleanValue =
+    value.trim();
+
+  if (
+    !/^\d+(?:\.\d{1,7})?$/.test(
+      cleanValue,
+    )
+  ) {
     return null;
   }
 
-  const [wholePart, fractionPart = ""] =
+  const [
+    wholePart,
+    fractionPart = "",
+  ] =
     cleanValue.split(".");
 
   try {
-    const whole = BigInt(wholePart);
+    const whole =
+      BigInt(
+        wholePart,
+      );
 
-    const fraction = BigInt(
-      fractionPart.padEnd(7, "0"),
-    );
+    const fraction =
+      BigInt(
+        fractionPart.padEnd(
+          7,
+          "0",
+        ),
+      );
 
     return (
-      whole * STROOPS_PER_XLM +
+      whole *
+        STROOPS_PER_XLM +
       fraction
     );
   } catch {
@@ -55,11 +89,56 @@ function xlmToStroops(value: string): bigint | null {
   }
 }
 
+function stroopsToXlm(
+  value: bigint,
+): string {
+  const negative =
+    value < 0n;
+
+  const absolute =
+    negative
+      ? -value
+      : value;
+
+  const whole =
+    absolute /
+    STROOPS_PER_XLM;
+
+  const fraction =
+    (
+      absolute %
+      STROOPS_PER_XLM
+    )
+      .toString()
+      .padStart(
+        7,
+        "0",
+      )
+      .replace(
+        /0+$/,
+        "",
+      );
+
+  const formatted =
+    fraction
+      ? `${whole}.${fraction}`
+      : whole.toString();
+
+  return negative
+    ? `-${formatted}`
+    : formatted;
+}
+
 function getWalletErrorMessage(
   error: unknown,
 ): string {
-  if (error instanceof PromptRailWalletError) {
-    switch (error.code) {
+  if (
+    error instanceof
+    PromptRailWalletError
+  ) {
+    switch (
+      error.code
+    ) {
       case "USER_REJECTED":
         return "The wallet request was rejected.";
 
@@ -80,135 +159,360 @@ function getWalletErrorMessage(
     }
   }
 
-  if (error instanceof Error) {
+  if (
+    error instanceof Error
+  ) {
     return error.message;
   }
 
   return "An unexpected wallet error occurred.";
 }
 
-function App() {
-  const [walletAddress, setWalletAddress] =
-    useState<string | null>(null);
+function registryStatusLabel(
+  status: RegistryTxStatus,
+): string {
+  switch (status) {
+    case "PREPARING":
+      return "Preparing transaction";
 
-  const [connecting, setConnecting] =
+    case "AWAITING_SIGNATURE":
+      return "Awaiting wallet signature";
+
+    case "PENDING":
+      return "Pending on Stellar";
+
+    case "SUCCESS":
+      return "Registry transaction confirmed";
+
+    case "FAILED":
+      return "Registry transaction failed";
+
+    default:
+      return "";
+  }
+}
+
+function App() {
+  const [
+    walletAddress,
+    setWalletAddress,
+  ] =
+    useState<
+      string | null
+    >(null);
+
+  const [
+    connecting,
+    setConnecting,
+  ] =
     useState(false);
 
-  const [connectionError, setConnectionError] =
-    useState<string | null>(null);
+  const [
+    connectionError,
+    setConnectionError,
+  ] =
+    useState<
+      string | null
+    >(null);
 
-  const [network, setNetwork] =
-    useState<string | null>(null);
+  const [
+    network,
+    setNetwork,
+  ] =
+    useState<
+      string | null
+    >(null);
 
   const [
     networkPassphrase,
     setNetworkPassphrase,
-  ] = useState<string | null>(null);
+  ] =
+    useState<
+      string | null
+    >(null);
 
-  const [xlmBalance, setXlmBalance] =
-    useState<string | null>(null);
+  const [
+    xlmBalance,
+    setXlmBalance,
+  ] =
+    useState<
+      string | null
+    >(null);
 
-  const [balanceLoading, setBalanceLoading] =
+  const [
+    balanceLoading,
+    setBalanceLoading,
+  ] =
     useState(false);
 
-  const [balanceError, setBalanceError] =
-    useState<string | null>(null);
+  const [
+    balanceError,
+    setBalanceError,
+  ] =
+    useState<
+      string | null
+    >(null);
 
-  const [destination, setDestination] =
+  const [
+    registryEntry,
+    setRegistryEntry,
+  ] =
+    useState<
+      Endpoint | null
+    >(null);
+
+  const [
+    registryLoading,
+    setRegistryLoading,
+  ] =
+    useState(false);
+
+  const [
+    registryError,
+    setRegistryError,
+  ] =
+    useState<
+      string | null
+    >(null);
+
+  const [
+    registryName,
+    setRegistryName,
+  ] =
     useState("");
 
-  const [amount, setAmount] =
+  const [
+    registryPrice,
+    setRegistryPrice,
+  ] =
     useState("");
 
-  const [sending, setSending] =
+  const [
+    registryTxStatus,
+    setRegistryTxStatus,
+  ] =
+    useState<
+      RegistryTxStatus
+    >("IDLE");
+
+  const [
+    registryTxError,
+    setRegistryTxError,
+  ] =
+    useState<
+      string | null
+    >(null);
+
+  const [
+    registryTxHash,
+    setRegistryTxHash,
+  ] =
+    useState<
+      string | null
+    >(null);
+
+  const [
+    destination,
+    setDestination,
+  ] =
+    useState("");
+
+  const [
+    amount,
+    setAmount,
+  ] =
+    useState("");
+
+  const [
+    sending,
+    setSending,
+  ] =
     useState(false);
 
   const [
     transactionError,
     setTransactionError,
-  ] = useState<string | null>(null);
+  ] =
+    useState<
+      string | null
+    >(null);
 
   const [
     transactionHash,
     setTransactionHash,
-  ] = useState<string | null>(null);
+  ] =
+    useState<
+      string | null
+    >(null);
 
   const isTestnet =
-    networkPassphrase === Networks.TESTNET;
+    networkPassphrase ===
+    Networks.TESTNET;
 
-  /*
-   * Fetch native XLM balance from Horizon Testnet.
-   */
-  const fetchBalance = async (
-    address: string,
-  ) => {
-    try {
-      setBalanceLoading(true);
-      setBalanceError(null);
+  const registryBusy =
+    registryTxStatus ===
+      "PREPARING" ||
+    registryTxStatus ===
+      "AWAITING_SIGNATURE" ||
+    registryTxStatus ===
+      "PENDING";
 
-      const account =
-        await horizonServer.loadAccount(
-          address,
+  const fetchBalance =
+    async (
+      address: string,
+    ) => {
+      try {
+        setBalanceLoading(
+          true,
         );
 
-      const nativeBalance =
-        account.balances.find(
-          (balance) =>
-            balance.asset_type === "native",
+        setBalanceError(
+          null,
         );
 
-      if (!nativeBalance) {
-        setXlmBalance("0");
-        return;
-      }
+        const account =
+          await horizonServer
+            .loadAccount(
+              address,
+            );
 
-      setXlmBalance(
-        nativeBalance.balance,
-      );
-    } catch (error) {
-      console.error(
-        "Balance fetch failed:",
-        error,
-      );
+        const nativeBalance =
+          account
+            .balances
+            .find(
+              (
+                balance,
+              ) =>
+                balance.asset_type ===
+                "native",
+            );
 
-      setXlmBalance(null);
+        if (
+          !nativeBalance
+        ) {
+          setXlmBalance(
+            "0",
+          );
 
-      const possibleError = error as {
-        response?: {
-          status?: number;
-        };
-      };
+          return;
+        }
 
-      if (
-        possibleError.response?.status ===
-        404
+        setXlmBalance(
+          nativeBalance
+            .balance,
+        );
+      } catch (
+        error
       ) {
-        setBalanceError(
-          "This wallet is not funded on Stellar Testnet yet.",
+        console.error(
+          "Balance fetch failed:",
+          error,
         );
-      } else {
-        setBalanceError(
-          "Could not fetch your XLM balance from Stellar Testnet.",
+
+        setXlmBalance(
+          null,
+        );
+
+        const possibleError =
+          error as {
+            response?: {
+              status?: number;
+            };
+          };
+
+        if (
+          possibleError
+            .response
+            ?.status ===
+          404
+        ) {
+          setBalanceError(
+            "This wallet is not funded on Stellar Testnet yet.",
+          );
+        } else {
+          setBalanceError(
+            "Could not fetch your XLM balance from Stellar Testnet.",
+          );
+        }
+      } finally {
+        setBalanceLoading(
+          false,
         );
       }
-    } finally {
-      setBalanceLoading(false);
-    }
-  };
+    };
 
-  /*
-   * Connect through Stellar Wallets Kit.
-   */
+  const fetchRegistryEntry =
+    async (
+      address: string,
+    ) => {
+      try {
+        setRegistryLoading(
+          true,
+        );
+
+        setRegistryError(
+          null,
+        );
+
+        const entry =
+          await getRegistryEntry(
+            address,
+          );
+
+        setRegistryEntry(
+          entry,
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          "Registry read failed:",
+          error,
+        );
+
+        setRegistryEntry(
+          null,
+        );
+
+        setRegistryError(
+          error instanceof
+          Error
+            ? error.message
+            : "Could not read the PromptRail Registry.",
+        );
+      } finally {
+        setRegistryLoading(
+          false,
+        );
+      }
+    };
+
   const handleConnectWallet =
     async () => {
       try {
-        setConnecting(true);
+        setConnecting(
+          true,
+        );
 
-        setConnectionError(null);
-        setBalanceError(null);
+        setConnectionError(
+          null,
+        );
 
-        setTransactionError(null);
-        setTransactionHash(null);
+        setBalanceError(
+          null,
+        );
+
+        setRegistryError(
+          null,
+        );
+
+        setRegistryTxError(
+          null,
+        );
+
+        setTransactionError(
+          null,
+        );
 
         const connected =
           await connectStellarWallet();
@@ -223,35 +527,61 @@ function App() {
         );
 
         setNetworkPassphrase(
-          connected.networkPassphrase,
+          connected
+            .networkPassphrase,
         );
 
-        await fetchBalance(
-          connected.address,
+        await Promise.all(
+          [
+            fetchBalance(
+              connected.address,
+            ),
+
+            fetchRegistryEntry(
+              connected.address,
+            ),
+          ],
         );
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "Wallet connection failed:",
           error,
         );
 
-        setWalletAddress(null);
-        setNetwork(null);
+        setWalletAddress(
+          null,
+        );
 
-        setNetworkPassphrase(null);
-        setXlmBalance(null);
+        setNetwork(
+          null,
+        );
+
+        setNetworkPassphrase(
+          null,
+        );
+
+        setXlmBalance(
+          null,
+        );
+
+        setRegistryEntry(
+          null,
+        );
 
         setConnectionError(
-          getWalletErrorMessage(error),
+          getWalletErrorMessage(
+            error,
+          ),
         );
       } finally {
-        setConnecting(false);
+        setConnecting(
+          false,
+        );
       }
     };
 
-  /*
-   * Disconnect Wallets Kit and clear local UI state.
-   */
   const handleDisconnectWallet =
     async () => {
       let disconnectError:
@@ -260,28 +590,82 @@ function App() {
 
       try {
         await disconnectStellarWallet();
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "Wallet disconnect failed:",
           error,
         );
 
         disconnectError =
-          getWalletErrorMessage(error);
+          getWalletErrorMessage(
+            error,
+          );
       } finally {
-        setWalletAddress(null);
-        setNetwork(null);
+        setWalletAddress(
+          null,
+        );
 
-        setNetworkPassphrase(null);
-        setXlmBalance(null);
+        setNetwork(
+          null,
+        );
 
-        setBalanceError(null);
+        setNetworkPassphrase(
+          null,
+        );
 
-        setDestination("");
-        setAmount("");
+        setXlmBalance(
+          null,
+        );
 
-        setTransactionHash(null);
-        setTransactionError(null);
+        setBalanceError(
+          null,
+        );
+
+        setRegistryEntry(
+          null,
+        );
+
+        setRegistryError(
+          null,
+        );
+
+        setRegistryName(
+          "",
+        );
+
+        setRegistryPrice(
+          "",
+        );
+
+        setRegistryTxStatus(
+          "IDLE",
+        );
+
+        setRegistryTxError(
+          null,
+        );
+
+        setRegistryTxHash(
+          null,
+        );
+
+        setDestination(
+          "",
+        );
+
+        setAmount(
+          "",
+        );
+
+        setTransactionHash(
+          null,
+        );
+
+        setTransactionError(
+          null,
+        );
 
         setConnectionError(
           disconnectError,
@@ -289,382 +673,580 @@ function App() {
       }
     };
 
-  /*
-   * Recheck current wallet and network.
-   */
-  const recheckNetwork = async () => {
-    try {
-      setConnectionError(null);
-      setBalanceError(null);
-
-      const connected =
-        await getConnectedWallet();
-
-      setWalletAddress(
-        connected.address,
-      );
-
-      setNetwork(
-        connected.network ||
-          "TESTNET",
-      );
-
-      setNetworkPassphrase(
-        connected.networkPassphrase,
-      );
-
-      await fetchBalance(
-        connected.address,
-      );
-    } catch (error) {
-      console.error(
-        "Network check failed:",
-        error,
-      );
-
-      setNetwork(null);
-      setNetworkPassphrase(null);
-
-      setXlmBalance(null);
-
-      setConnectionError(
-        getWalletErrorMessage(error),
-      );
-    }
-  };
-
-  /*
-   * Refresh balance.
-   */
-  const refreshBalance = async () => {
-    if (
-      !walletAddress ||
-      !isTestnet
-    ) {
-      return;
-    }
-
-    await fetchBalance(
-      walletAddress,
-    );
-  };
-
-  /*
-   * Send XLM on Stellar Testnet.
-   */
-  const sendXlm = async (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault();
-
-    if (!walletAddress) {
-      setTransactionError(
-        "Connect a wallet before creating a transaction.",
-      );
-
-      return;
-    }
-
-    try {
-      setSending(true);
-
-      setTransactionError(null);
-      setTransactionHash(null);
-
-      /*
-       * 1. Recheck wallet + Testnet immediately
-       * before transaction construction.
-       */
-      const connected =
-        await getConnectedWallet();
-
-      if (
-        connected.networkPassphrase !==
-        Networks.TESTNET
-      ) {
-        throw new PromptRailWalletError(
-          "WRONG_NETWORK",
-          "Refusing to transact outside Stellar Testnet.",
-        );
-      }
-
-      /*
-       * Prevent signing if the user changed accounts
-       * outside PromptRail.
-       */
-      if (
-        connected.address !==
-        walletAddress
-      ) {
-        throw new PromptRailWalletError(
-          "NOT_CONNECTED",
-          "The active wallet account changed. Reconnect before signing.",
-        );
-      }
-
-      setNetwork(
-        connected.network ||
-          "TESTNET",
-      );
-
-      setNetworkPassphrase(
-        connected.networkPassphrase,
-      );
-
-      /*
-       * 2. Validate destination.
-       */
-      const cleanDestination =
-        destination.trim();
-
-      if (
-        !StrKey.isValidEd25519PublicKey(
-          cleanDestination,
-        )
-      ) {
-        throw new Error(
-          "Enter a valid Stellar G... address.",
-        );
-      }
-
-      if (
-        cleanDestination ===
-        walletAddress
-      ) {
-        throw new Error(
-          "Please use a different Testnet account as the recipient.",
-        );
-      }
-
-      /*
-       * 3. Validate XLM amount using integer
-       * stroops instead of floating-point maths.
-       */
-      const cleanAmount =
-        amount.trim();
-
-      const amountStroops =
-        xlmToStroops(cleanAmount);
-
-      if (
-        amountStroops === null ||
-        amountStroops <= 0n
-      ) {
-        throw new Error(
-          "Enter a valid XLM amount greater than 0 with at most 7 decimal places.",
-        );
-      }
-
-      /*
-       * Basic preflight balance check.
-       */
-      if (xlmBalance) {
-        const balanceStroops =
-          xlmToStroops(xlmBalance);
-
-        if (
-          balanceStroops !== null &&
-          amountStroops >=
-            balanceStroops
-        ) {
-          throw new Error(
-            "Insufficient XLM balance for this payment and network fees.",
-          );
-        }
-      }
-
-      /*
-       * 4. Standard payment requires recipient
-       * account to already exist.
-       */
+  const recheckNetwork =
+    async () => {
       try {
-        await horizonServer.loadAccount(
-          cleanDestination,
+        setConnectionError(
+          null,
         );
-      } catch {
-        throw new Error(
-          "Recipient account is not funded on Stellar Testnet. Fund the recipient first.",
+
+        setBalanceError(
+          null,
+        );
+
+        setRegistryError(
+          null,
+        );
+
+        const connected =
+          await getConnectedWallet();
+
+        setWalletAddress(
+          connected.address,
+        );
+
+        setNetwork(
+          connected.network ||
+            "TESTNET",
+        );
+
+        setNetworkPassphrase(
+          connected
+            .networkPassphrase,
+        );
+
+        await Promise.all(
+          [
+            fetchBalance(
+              connected.address,
+            ),
+
+            fetchRegistryEntry(
+              connected.address,
+            ),
+          ],
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          "Network check failed:",
+          error,
+        );
+
+        setNetwork(
+          null,
+        );
+
+        setNetworkPassphrase(
+          null,
+        );
+
+        setXlmBalance(
+          null,
+        );
+
+        setRegistryEntry(
+          null,
+        );
+
+        setConnectionError(
+          getWalletErrorMessage(
+            error,
+          ),
         );
       }
+    };
 
-      /*
-       * 5. Load current source account.
-       */
-      const sourceAccount =
-        await horizonServer.loadAccount(
-          walletAddress,
-        );
-
-      /*
-       * 6. Build unsigned transaction.
-       */
-      const transaction =
-        new TransactionBuilder(
-          sourceAccount,
-          {
-            fee: BASE_FEE,
-            networkPassphrase:
-              Networks.TESTNET,
-          },
-        )
-          .addOperation(
-            Operation.payment({
-              destination:
-                cleanDestination,
-
-              asset:
-                Asset.native(),
-
-              amount:
-                cleanAmount,
-            }),
-          )
-          .addMemo(
-            Memo.text(
-              "PromptRail Yellow Belt",
-            ),
-          )
-          .setTimeout(30)
-          .build();
-
-      /*
-       * 7. Serialize unsigned transaction.
-       *
-       * IMPORTANT:
-       * Stellar SDK 16.x uses toXDR().
-       * SDK 17 renamed this to toXdr().
-       */
-      const unsignedXdr =
-        transaction
-          .toEnvelope()
-          .toXDR("base64");
-
-      /*
-       * 8. Sign through the selected wallet.
-       */
-      const signedTxXdr =
-        await signWalletTransaction(
-          unsignedXdr,
-          walletAddress,
-        );
-
-      /*
-       * 9. Parse signed transaction.
-       *
-       * IMPORTANT:
-       * Stellar SDK 16.x uses fromXDR().
-       */
-      const signedTransaction =
-        TransactionBuilder.fromXDR(
-          signedTxXdr,
-          Networks.TESTNET,
-        );
-
-      /*
-       * 10. Submit to Stellar Testnet.
-       */
-      const result =
-        await horizonServer.submitTransaction(
-          signedTransaction,
-        );
-
-      /*
-       * 11. Success.
-       */
-      setTransactionHash(
-        result.hash,
-      );
-
-      setAmount("");
+  const refreshBalance =
+    async () => {
+      if (
+        !walletAddress ||
+        !isTestnet
+      ) {
+        return;
+      }
 
       await fetchBalance(
         walletAddress,
       );
-    } catch (error) {
-      console.error(
-        "Transaction failed:",
-        error,
-      );
+    };
 
-      /*
-       * Wallet-specific errors.
-       */
+  const refreshRegistry =
+    async () => {
       if (
-        error instanceof
-        PromptRailWalletError
+        !walletAddress ||
+        !isTestnet
       ) {
-        setTransactionError(
-          getWalletErrorMessage(error),
+        return;
+      }
+
+      await fetchRegistryEntry(
+        walletAddress,
+      );
+    };
+
+  const handleRegisterRegistry =
+    async (
+      event: FormEvent<HTMLFormElement>,
+    ) => {
+      event.preventDefault();
+
+      if (
+        !walletAddress
+      ) {
+        setRegistryTxStatus(
+          "FAILED",
+        );
+
+        setRegistryTxError(
+          "Connect a wallet before registering an API.",
         );
 
         return;
       }
 
-      /*
-       * Horizon transaction errors.
-       */
-      const horizonError =
-        error as {
-          response?: {
-            data?: {
-              extras?: {
-                result_codes?: {
-                  transaction?: string;
-                  operations?: string[];
-                };
-              };
-            };
-          };
-        };
+      if (
+        registryEntry
+      ) {
+        setRegistryTxStatus(
+          "FAILED",
+        );
 
-      const resultCodes =
-        horizonError.response
-          ?.data?.extras
-          ?.result_codes;
+        setRegistryTxError(
+          "This wallet already has a Registry entry.",
+        );
 
-      if (resultCodes) {
-        const operationCodes =
-          resultCodes.operations ?? [];
+        return;
+      }
 
-        const insufficientBalance =
-          resultCodes.transaction ===
-            "tx_insufficient_balance" ||
-          operationCodes.includes(
-            "op_underfunded",
+      const cleanName =
+        registryName.trim();
+
+      const priceStroops =
+        xlmToStroops(
+          registryPrice,
+        );
+
+      if (
+        !cleanName
+      ) {
+        setRegistryTxStatus(
+          "FAILED",
+        );
+
+        setRegistryTxError(
+          "Enter an API name.",
+        );
+
+        return;
+      }
+
+      if (
+        priceStroops ===
+          null ||
+        priceStroops <=
+          0n
+      ) {
+        setRegistryTxStatus(
+          "FAILED",
+        );
+
+        setRegistryTxError(
+          "Enter a valid XLM price greater than 0 with at most 7 decimal places.",
+        );
+
+        return;
+      }
+
+      if (
+        priceStroops >
+        MAX_REGISTRY_PRICE_STROOPS
+      ) {
+        setRegistryTxStatus(
+          "FAILED",
+        );
+
+        setRegistryTxError(
+          "The Registry price is above the allowed maximum.",
+        );
+
+        return;
+      }
+
+      try {
+        setRegistryTxError(
+          null,
+        );
+
+        setRegistryTxHash(
+          null,
+        );
+
+        const result =
+          await registerRegistryEntry(
+            {
+              owner:
+                walletAddress,
+
+              name:
+                cleanName,
+
+              priceStroops,
+
+              onStatus:
+                setRegistryTxStatus,
+            },
           );
 
-        if (insufficientBalance) {
+        setRegistryEntry(
+          result.endpoint,
+        );
+
+        setRegistryTxHash(
+          result.hash,
+        );
+
+        setRegistryName(
+          "",
+        );
+
+        setRegistryPrice(
+          "",
+        );
+
+        await Promise.all(
+          [
+            fetchBalance(
+              walletAddress,
+            ),
+
+            fetchRegistryEntry(
+              walletAddress,
+            ),
+          ],
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          "Registry write failed:",
+          error,
+        );
+
+        setRegistryTxError(
+          getWalletErrorMessage(
+            error,
+          ),
+        );
+      }
+    };
+
+  const sendXlm =
+    async (
+      event: FormEvent<HTMLFormElement>,
+    ) => {
+      event.preventDefault();
+
+      if (
+        !walletAddress
+      ) {
+        setTransactionError(
+          "Connect a wallet before creating a transaction.",
+        );
+
+        return;
+      }
+
+      try {
+        setSending(
+          true,
+        );
+
+        setTransactionError(
+          null,
+        );
+
+        setTransactionHash(
+          null,
+        );
+
+        const connected =
+          await getConnectedWallet();
+
+        if (
+          connected
+            .networkPassphrase !==
+          Networks.TESTNET
+        ) {
+          throw new PromptRailWalletError(
+            "WRONG_NETWORK",
+            "Refusing to transact outside Stellar Testnet.",
+          );
+        }
+
+        if (
+          connected.address !==
+          walletAddress
+        ) {
+          throw new PromptRailWalletError(
+            "NOT_CONNECTED",
+            "The active wallet account changed. Reconnect before signing.",
+          );
+        }
+
+        setNetwork(
+          connected.network ||
+            "TESTNET",
+        );
+
+        setNetworkPassphrase(
+          connected
+            .networkPassphrase,
+        );
+
+        const cleanDestination =
+          destination.trim();
+
+        if (
+          !StrKey
+            .isValidEd25519PublicKey(
+              cleanDestination,
+            )
+        ) {
+          throw new Error(
+            "Enter a valid Stellar G... address.",
+          );
+        }
+
+        if (
+          cleanDestination ===
+          walletAddress
+        ) {
+          throw new Error(
+            "Please use a different Testnet account as the recipient.",
+          );
+        }
+
+        const cleanAmount =
+          amount.trim();
+
+        const amountStroops =
+          xlmToStroops(
+            cleanAmount,
+          );
+
+        if (
+          amountStroops ===
+            null ||
+          amountStroops <=
+            0n
+        ) {
+          throw new Error(
+            "Enter a valid XLM amount greater than 0 with at most 7 decimal places.",
+          );
+        }
+
+        if (
+          xlmBalance
+        ) {
+          const balanceStroops =
+            xlmToStroops(
+              xlmBalance,
+            );
+
+          if (
+            balanceStroops !==
+              null &&
+            amountStroops >=
+              balanceStroops
+          ) {
+            throw new Error(
+              "Insufficient XLM balance for this payment and network fees.",
+            );
+          }
+        }
+
+        try {
+          await horizonServer
+            .loadAccount(
+              cleanDestination,
+            );
+        } catch {
+          throw new Error(
+            "Recipient account is not funded on Stellar Testnet. Fund the recipient first.",
+          );
+        }
+
+        const sourceAccount =
+          await horizonServer
+            .loadAccount(
+              walletAddress,
+            );
+
+        const transaction =
+          new TransactionBuilder(
+            sourceAccount,
+            {
+              fee:
+                BASE_FEE,
+
+              networkPassphrase:
+                Networks.TESTNET,
+            },
+          )
+            .addOperation(
+              Operation.payment(
+                {
+                  destination:
+                    cleanDestination,
+
+                  asset:
+                    Asset.native(),
+
+                  amount:
+                    cleanAmount,
+                },
+              ),
+            )
+            .addMemo(
+              Memo.text(
+                "PromptRail Yellow Belt",
+              ),
+            )
+            .setTimeout(
+              30,
+            )
+            .build();
+
+        /*
+         * SDK 16.x uses XDR capitalization.
+         */
+        const unsignedXdr =
+          transaction
+            .toEnvelope()
+            .toXDR(
+              "base64",
+            );
+
+        const signedTxXdr =
+          await signWalletTransaction(
+            unsignedXdr,
+            walletAddress,
+          );
+
+        const signedTransaction =
+          TransactionBuilder
+            .fromXDR(
+              signedTxXdr,
+              Networks.TESTNET,
+            );
+
+        const result =
+          await horizonServer
+            .submitTransaction(
+              signedTransaction,
+            );
+
+        setTransactionHash(
+          result.hash,
+        );
+
+        setAmount(
+          "",
+        );
+
+        await fetchBalance(
+          walletAddress,
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          "Transaction failed:",
+          error,
+        );
+
+        if (
+          error instanceof
+          PromptRailWalletError
+        ) {
           setTransactionError(
-            "Insufficient XLM balance to complete this transaction while maintaining Stellar reserves and fees.",
+            getWalletErrorMessage(
+              error,
+            ),
           );
 
           return;
         }
 
-        const operationCode =
-          operationCodes.join(", ");
+        const horizonError =
+          error as {
+            response?: {
+              data?: {
+                extras?: {
+                  result_codes?: {
+                    transaction?: string;
+
+                    operations?: string[];
+                  };
+                };
+              };
+            };
+          };
+
+        const resultCodes =
+          horizonError
+            .response
+            ?.data
+            ?.extras
+            ?.result_codes;
+
+        if (
+          resultCodes
+        ) {
+          const operationCodes =
+            resultCodes
+              .operations ??
+            [];
+
+          const insufficientBalance =
+            resultCodes
+              .transaction ===
+                "tx_insufficient_balance" ||
+            operationCodes
+              .includes(
+                "op_underfunded",
+              );
+
+          if (
+            insufficientBalance
+          ) {
+            setTransactionError(
+              "Insufficient XLM balance to complete this transaction while maintaining Stellar reserves and fees.",
+            );
+
+            return;
+          }
+
+          const operationCode =
+            operationCodes
+              .join(", ");
+
+          setTransactionError(
+            operationCode
+              ? `Stellar rejected the transaction: ${operationCode}`
+              : `Stellar rejected the transaction: ${
+                  resultCodes.transaction ??
+                  "unknown error"
+                }`,
+          );
+
+          return;
+        }
 
         setTransactionError(
-          operationCode
-            ? `Stellar rejected the transaction: ${operationCode}`
-            : `Stellar rejected the transaction: ${
-                resultCodes.transaction ??
-                "unknown error"
-              }`,
+          error instanceof
+          Error
+            ? error.message
+            : "The transaction could not be completed.",
         );
-
-        return;
+      } finally {
+        setSending(
+          false,
+        );
       }
-
-      setTransactionError(
-        error instanceof Error
-          ? error.message
-          : "The transaction could not be completed.",
-      );
-    } finally {
-      setSending(false);
-    }
-  };
+    };
 
   return (
     <main className="app">
@@ -675,7 +1257,9 @@ function App() {
           </div>
 
           <div>
-            <h1>PromptRail</h1>
+            <h1>
+              PromptRail
+            </h1>
 
             <span>
               Machine Payments on Stellar
@@ -685,20 +1269,23 @@ function App() {
 
         <div
           className={`network-badge ${
-            network && !isTestnet
+            network &&
+            !isTestnet
               ? "network-badge-wrong"
               : ""
           }`}
         >
           <span
             className={`network-dot ${
-              network && !isTestnet
+              network &&
+              !isTestnet
                 ? "network-dot-wrong"
                 : ""
             }`}
           />
 
-          {network ?? "TESTNET"}
+          {network ??
+            "TESTNET"}
         </div>
       </header>
 
@@ -708,17 +1295,17 @@ function App() {
         </div>
 
         <h2>
-          Multi-wallet rails
+          Smart contract rails
           <br />
           for the agentic web.
         </h2>
 
         <p>
-          Connect your preferred Stellar
-          wallet, verify Testnet and
-          securely sign PromptRail
-          transactions without exposing
-          private keys.
+          Connect a Stellar wallet,
+          register an API on Soroban
+          and track the transaction
+          from simulation to final
+          confirmation.
         </p>
       </section>
 
@@ -740,6 +1327,7 @@ function App() {
 
             <div className="connected-status">
               <span className="connected-dot" />
+
               Connected
             </div>
 
@@ -789,8 +1377,7 @@ function App() {
                     </strong>
 
                     <span className="balance-caption">
-                      Stellar Testnet
-                      balance
+                      Stellar Testnet balance
                     </span>
                   </>
                 ) : (
@@ -851,9 +1438,331 @@ function App() {
 
                 <span>
                   {isTestnet
-                    ? "Ready for test transactions."
+                    ? "Ready for Soroban transactions."
                     : "PromptRail blocks transactions outside Testnet."}
                 </span>
+              </div>
+            )}
+
+            {isTestnet && (
+              <div className="payment-form">
+                <div className="payment-heading">
+                  <span className="payment-eyebrow">
+                    SOROBAN REGISTRY
+                  </span>
+
+                  <h4>
+                    My Registry Entry
+                  </h4>
+
+                  <p>
+                    Read and write API
+                    metadata through the
+                    deployed PromptRail
+                    smart contract.
+                  </p>
+                </div>
+
+                {registryLoading ? (
+                  <div className="network-panel network-panel-good">
+                    <span className="network-panel-label">
+                      CONTRACT STATE
+                    </span>
+
+                    <strong>
+                      Reading Registry...
+                    </strong>
+
+                    <span>
+                      Simulating a read-only
+                      Soroban call.
+                    </span>
+                  </div>
+                ) : registryError ? (
+                  <div
+                    className="connection-error"
+                    role="alert"
+                  >
+                    {registryError}
+                  </div>
+                ) : registryEntry ? (
+                  <>
+                    <div className="wallet-address">
+                      <span className="wallet-address-label">
+                        API NAME
+                      </span>
+
+                      <strong>
+                        {registryEntry.name}
+                      </strong>
+                    </div>
+
+                    <div
+                      className={`network-panel ${
+                        registryEntry.active
+                          ? "network-panel-good"
+                          : "network-panel-wrong"
+                      }`}
+                    >
+                      <span className="network-panel-label">
+                        REGISTRY STATUS
+                      </span>
+
+                      <strong>
+                        {registryEntry.active
+                          ? "Active"
+                          : "Inactive"}
+                      </strong>
+
+                      <span>
+                        Stored on Stellar
+                        Testnet.
+                      </span>
+                    </div>
+
+                    <div className="wallet-address">
+                      <span className="wallet-address-label">
+                        API PRICE
+                      </span>
+
+                      <strong>
+                        {stroopsToXlm(
+                          registryEntry.price,
+                        )}{" "}
+                        XLM
+                      </strong>
+
+                      <span className="balance-caption">
+                        {registryEntry.price.toString()}{" "}
+                        stroops
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="balance-error">
+                      <strong>
+                        No Registry entry yet
+                      </strong>
+
+                      <span>
+                        Register this wallet's
+                        first API endpoint.
+                      </span>
+                    </div>
+
+                    <form
+                      onSubmit={
+                        handleRegisterRegistry
+                      }
+                    >
+                      <label>
+                        API Name
+
+                        <input
+                          type="text"
+                          value={
+                            registryName
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            setRegistryName(
+                              event.target.value,
+                            )
+                          }
+                          placeholder="PromptRail Demo API"
+                          autoComplete="off"
+                          disabled={
+                            registryBusy
+                          }
+                        />
+                      </label>
+
+                      <label>
+                        Price
+
+                        <div className="amount-input">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={
+                              registryPrice
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setRegistryPrice(
+                                event.target.value,
+                              )
+                            }
+                            placeholder="0.02"
+                            autoComplete="off"
+                            disabled={
+                              registryBusy
+                            }
+                          />
+
+                          <span>
+                            XLM
+                          </span>
+                        </div>
+                      </label>
+
+                      <button
+                        className="primary-button"
+                        type="submit"
+                        disabled={
+                          registryBusy ||
+                          !registryName ||
+                          !registryPrice
+                        }
+                      >
+                        {registryTxStatus ===
+                        "AWAITING_SIGNATURE"
+                          ? "Check your wallet..."
+                          : registryTxStatus ===
+                              "PENDING"
+                            ? "Pending on Stellar..."
+                            : registryTxStatus ===
+                                "PREPARING"
+                              ? "Preparing..."
+                              : "Register API"}
+                      </button>
+                    </form>
+                  </>
+                )}
+
+                {registryTxStatus !==
+                  "IDLE" && (
+                  <div
+                    className={`network-panel ${
+                      registryTxStatus ===
+                        "FAILED"
+                        ? "network-panel-wrong"
+                        : "network-panel-good"
+                    }`}
+                    aria-live="polite"
+                  >
+                    <span className="network-panel-label">
+                      TRANSACTION STATUS
+                    </span>
+
+                    <strong>
+                      {registryStatusLabel(
+                        registryTxStatus,
+                      )}
+                    </strong>
+
+                    <span>
+                      {registryTxStatus ===
+                        "PREPARING" &&
+                        "Building and simulating the contract call."}
+
+                      {registryTxStatus ===
+                        "AWAITING_SIGNATURE" &&
+                        "Approve the exact Testnet transaction in your wallet."}
+
+                      {registryTxStatus ===
+                        "PENDING" &&
+                        "The signed transaction is being finalized on Stellar."}
+
+                      {registryTxStatus ===
+                        "SUCCESS" &&
+                        "The Registry write is confirmed on-chain."}
+
+                      {registryTxStatus ===
+                        "FAILED" &&
+                        "The Registry write did not complete."}
+                    </span>
+                  </div>
+                )}
+
+                {registryTxError && (
+                  <div
+                    className="connection-error"
+                    role="alert"
+                  >
+                    {registryTxError}
+                  </div>
+                )}
+
+                {registryTxHash && (
+                  <div className="transaction-result transaction-success">
+                    <span className="result-icon">
+                      OK
+                    </span>
+
+                    <div>
+                      <strong>
+                        Registry transaction confirmed
+                      </strong>
+
+                      <p>
+                        Your API metadata was
+                        written to PromptRail
+                        Registry on Testnet.
+                      </p>
+
+                      <span className="hash-label">
+                        TRANSACTION HASH
+                      </span>
+
+                      <code>
+                        {registryTxHash.slice(
+                          0,
+                          12,
+                        )}
+                        ...
+                        {registryTxHash.slice(
+                          -12,
+                        )}
+                      </code>
+
+                      <a
+                        href={`https://stellar.expert/explorer/testnet/tx/${registryTxHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View Registry transaction
+                        -&gt;
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <div className="wallet-address">
+                  <span className="wallet-address-label">
+                    CONTRACT
+                  </span>
+
+                  <strong>
+                    {REGISTRY_CONTRACT_ID.slice(
+                      0,
+                      10,
+                    )}
+                    ...
+                    {REGISTRY_CONTRACT_ID.slice(
+                      -10,
+                    )}
+                  </strong>
+                </div>
+
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={
+                    refreshRegistry
+                  }
+                  disabled={
+                    registryLoading ||
+                    registryBusy
+                  }
+                >
+                  {registryLoading
+                    ? "Reading Registry..."
+                    : "Refresh Registry Entry"}
+                </button>
               </div>
             )}
 
@@ -861,7 +1770,9 @@ function App() {
               xlmBalance && (
                 <form
                   className="payment-form"
-                  onSubmit={sendXlm}
+                  onSubmit={
+                    sendXlm
+                  }
                 >
                   <div className="payment-heading">
                     <span className="payment-eyebrow">
@@ -873,10 +1784,10 @@ function App() {
                     </h4>
 
                     <p>
-                      Create locally,
-                      sign with your
-                      selected wallet and
-                      submit to Stellar.
+                      Create locally, sign
+                      with your selected
+                      wallet and submit to
+                      Stellar.
                     </p>
                   </div>
 
@@ -892,13 +1803,14 @@ function App() {
                         event,
                       ) =>
                         setDestination(
-                          event.target
-                            .value,
+                          event.target.value,
                         )
                       }
                       placeholder="G..."
                       autoComplete="off"
-                      spellCheck={false}
+                      spellCheck={
+                        false
+                      }
                       disabled={
                         sending
                       }
@@ -919,8 +1831,7 @@ function App() {
                           event,
                         ) =>
                           setAmount(
-                            event.target
-                              .value,
+                            event.target.value,
                           )
                         }
                         placeholder="1.00"
@@ -968,9 +1879,7 @@ function App() {
                   </strong>
 
                   <p>
-                    {
-                      transactionError
-                    }
+                    {transactionError}
                   </p>
                 </div>
               </div>
@@ -1016,7 +1925,8 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    View transaction -&gt;
+                    View transaction
+                    -&gt;
                   </a>
                 </div>
               </div>
@@ -1028,6 +1938,9 @@ function App() {
               onClick={
                 recheckNetwork
               }
+              disabled={
+                registryBusy
+              }
             >
               Recheck Wallet & Network
             </button>
@@ -1037,6 +1950,9 @@ function App() {
               type="button"
               onClick={
                 handleDisconnectWallet
+              }
+              disabled={
+                registryBusy
               }
             >
               Disconnect Wallet
