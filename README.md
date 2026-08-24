@@ -1,499 +1,507 @@
 # PromptRail
 
-**Machine Payments on Stellar**
+**Smart contract rails for machine payments on Stellar.**
 
-PromptRail Launchpad is a Stellar Testnet dApp built for the **Stellar Journey to Mastery — White Belt Challenge**.
+PromptRail is a Stellar Testnet dApp built for the Rise In Stellar Journey to Mastery Yellow Belt challenge.
 
-It demonstrates the fundamental building blocks of a Stellar application:
+The Yellow Belt version extends the original wallet/payment prototype with:
 
-* Connecting a Freighter wallet
-* Detecting and validating the active Stellar network
-* Fetching an account's XLM balance
-* Building a Stellar payment transaction
-* Signing the transaction securely with Freighter
-* Submitting the signed transaction to Stellar Testnet
-* Displaying transaction success, failure, and transaction hash information
+- Multi-wallet Stellar connectivity
+- A deployed Soroban Registry smart contract
+- Wallet-authorized contract writes
+- Typed generated contract bindings
+- Transaction lifecycle feedback
+- Contract-filtered live event activity
+- Testnet XLM payments
 
-PromptRail is designed as the first technical foundation for a broader vision: enabling programmable and machine-to-machine payments for APIs and AI agents using Stellar.
+> Network: **Stellar Testnet**
 
 ---
 
 ## Live Demo
 
-[Deployment link is here.](https://promptrail-ten.vercel.app/)
+Deployment URL will be added after the Yellow Belt production deployment.
 
 ---
 
-### Deployment Status
+## Yellow Belt Features
 
-PromptRail is deployed publicly on Vercel and has been tested end-to-end on Stellar Testnet.
+### Multi-wallet support
 
-Verified production flow:
+PromptRail uses Stellar Wallets Kit with an explicit wallet allowlist:
 
-- ✅ Freighter wallet connection
-- ✅ Stellar Testnet detection
-- ✅ XLM balance retrieval
-- ✅ XLM transaction creation
-- ✅ Freighter transaction signing
-- ✅ Stellar Testnet submission
-- ✅ Transaction confirmation
-- ✅ Transaction hash and explorer link
+- Freighter
+- Albedo
+- xBull
 
----
+The application does not use the full `defaultModules()` wallet set.
 
-## White Belt Requirements
+Supported wallet failures include:
 
-| Requirement                        | Status |
-| ---------------------------------- | ------ |
-| Freighter wallet setup             | ✅      |
-| Stellar Testnet support            | ✅      |
-| Wallet connect                     | ✅      |
-| Wallet disconnect                  | ✅      |
-| Fetch XLM balance                  | ✅      |
-| Display XLM balance                | ✅      |
-| Send XLM on Testnet                | ✅      |
-| Transaction signing with Freighter | ✅      |
-| Success feedback                   | ✅      |
-| Failure feedback                   | ✅      |
-| Transaction hash display           | ✅      |
-| Stellar explorer link              | ✅      |
-| Error handling                     | ✅      |
-| Public GitHub repository           | ✅      |
-| 10+ meaningful commits             | ✅      |
-| Public deployment                  | ✅      |
+- Wallet unavailable
+- User rejected request
+- Wrong Stellar network
+- Wallet disconnected
+- Signing failure
+- Insufficient XLM balance
 
 ---
 
-## Screenshots
+## Soroban Registry
 
-### Wallet Connected
+PromptRail Registry stores API endpoint metadata directly on Stellar Testnet.
 
-The application detects Freighter, requests wallet access, and displays the connected Stellar public address.
-
-![Wallet Connected](docs/screenshots/wallet-connected.png)
-
----
-
-### XLM Balance
-
-PromptRail fetches the connected wallet's native XLM balance directly from Stellar Testnet through Horizon.
-
-![XLM Balance](docs/screenshots/balance-testnet.png)
-
----
-
-### Successful Testnet Transaction
-
-A real XLM payment is created, signed through Freighter, submitted to Stellar Testnet, and confirmed by Horizon.
-
-The interface displays the transaction hash and provides a direct link to the transaction on Stellar Expert.
-
-![Successful Testnet Transaction](docs/screenshots/payment-success.png)
-
----
-
-### Transaction Error Handling
-
-PromptRail validates transaction inputs and provides clear failure feedback when a payment cannot be completed.
-
-![Transaction Error](docs/screenshots/payment-error.png)
-
----
-
-## How It Works
+Each registered endpoint contains:
 
 ```text
-User
-  │
-  ▼
-PromptRail
-  │
-  ├── Connect Freighter
-  │
-  ▼
-Freighter Wallet
-  │
-  ├── Public Stellar Address
-  │
-  ▼
-Stellar Horizon Testnet
-  │
-  ├── Account Data
-  └── XLM Balance
-
-Payment Flow
-  │
-  ▼
-Recipient + Amount
-  │
-  ▼
-TransactionBuilder
-  │
-  ▼
-XLM Payment Operation
-  │
-  ▼
-Freighter Signature
-  │
-  ▼
-Signed XDR
-  │
-  ▼
-Stellar Horizon Testnet
-  │
-  ▼
-Transaction Confirmed
-  │
-  ▼
-Transaction Hash + Updated Balance
+owner
+name
+price
+active
 ```
 
----
+The current Yellow Belt contract supports:
 
-## Features
+```text
+register
+get
+update_price
+set_active
+```
 
-### Freighter Wallet Integration
+### Contract Address
 
-PromptRail detects whether the Freighter wallet is available and requests access to the user's Stellar public address.
+```text
+CD5OS7U3PO3TFSRKZXV4ZH3AQFKWZSGAPE6ENGBBXCQRLTGDCZF5XB26
+```
 
-Private keys are never exposed to PromptRail.
-
----
-
-### Network Validation
-
-The application reads the currently active Freighter network.
-
-Transactions are only allowed when the wallet is connected to:
+Network:
 
 ```text
 Stellar Testnet
 ```
 
-If Freighter is connected to the public Stellar network instead, PromptRail displays a warning and prevents Testnet transaction activity.
+Deployer public key:
+
+```text
+GD4ZZVS4TTHJG5MVVQ75KWKEDGKONSAR4HHZH6YIMYWQPEZXH6EQWG3A
+```
+
+No deployer private key or seed is stored in this repository.
 
 ---
 
-### XLM Balance
+## Verified Contract Transaction
 
-PromptRail loads the connected Stellar account through Horizon and displays its native XLM balance.
+Initial verified Registry registration transaction:
 
-The balance can also be manually refreshed from the interface.
+```text
+b7d372e76ac6b83662f68072d21fe3cd202406c9efe6126ef423a16d6cc867b9
+```
 
----
+Ledger:
 
-### XLM Payments
+```text
+4316493
+```
 
-Users can enter:
+Registered entry:
 
-* A Stellar recipient address
-* An XLM amount
+```text
+Name:  PromptRail Demo API
+Price: 200000 stroops
+       = 0.02 XLM
+```
 
-PromptRail then:
+Explorer:
 
-1. Validates the destination address
-2. Validates the amount
-3. Confirms that the recipient exists on Stellar Testnet
-4. Loads the sender's account
-5. Builds an XLM payment transaction
-6. Converts the transaction to XDR
-7. Requests a signature from Freighter
-8. Submits the signed transaction to Horizon
-9. Displays the transaction result
-10. Refreshes the wallet balance
+https://stellar.expert/explorer/testnet/tx/b7d372e76ac6b83662f68072d21fe3cd202406c9efe6126ef423a16d6cc867b9
 
 ---
 
-### Transaction Feedback
+## Wallet-signed Registry Writes
 
-Successful transactions display:
+Registry writes are initiated by the frontend and signed by the connected Stellar wallet.
 
-* Success confirmation
-* Transaction hash
-* Stellar Explorer link
-* Updated XLM balance
+The UI exposes the full transaction state:
 
-Failed transactions display a clear error state to the user.
+```text
+PREPARING
+    ↓
+AWAITING_SIGNATURE
+    ↓
+PENDING
+    ↓
+SUCCESS / FAILED
+```
 
-Examples include:
+PromptRail does not display a successful contract write until the Soroban transaction has finalized.
 
-* Invalid Stellar addresses
-* Recipient accounts that are not funded
-* Incorrect network selection
-* Invalid XLM amounts
-* Rejected transactions
+Before signing, the application validates:
 
----
+- Connected account
+- Stellar Testnet network
+- Owner address
+- API name
+- UTF-8 name length
+- Price bounds
+- Simulated contract result
+- Required non-invoker authorization
 
-## Technology Stack
-
-### Frontend
-
-* React
-* TypeScript
-* Vite
-* CSS
-
-### Stellar
-
-* Stellar JavaScript SDK
-* Freighter API
-* Stellar Horizon
-* Stellar Testnet
-
-### Development
-
-* ESLint
-* Git
-* GitHub
+The contract itself independently enforces owner authorization with `require_auth()`.
 
 ---
 
-## Installation
+## Live Registry Activity
 
-### Prerequisites
+PromptRail includes a live contract event feed.
 
-Make sure the following are installed:
+The frontend polls Stellar RPC approximately every 3 seconds and filters events to the deployed PromptRail Registry contract.
 
-* Node.js
-* npm
-* Git
-* Freighter Wallet browser extension
+Supported Registry activity:
 
-Freighter must be configured to use **Stellar Testnet**.
+```text
+EndpointRegistered
+PriceUpdated
+StatusChanged
+```
+
+The feed:
+
+- Filters by exact contract ID
+- Decodes Soroban event values
+- Deduplicates events by event ID
+- Tracks the RPC cursor
+- Prevents overlapping polling requests
+- Displays the owner
+- Displays the ledger
+- Links to the originating transaction
+
+This provides near-real-time synchronization between on-chain Registry activity and the frontend.
 
 ---
 
-### Clone the Repository
+## Machine Payments
 
-```bash
-git clone [<YOUR-GITHUB-REPOSITORY-URL>](https://github.com/barbarosalagoz/promptrail.git)
-cd promptrail
+The application also retains the original PromptRail XLM payment functionality.
+
+Payments are:
+
+1. Built locally
+2. Signed by the connected wallet
+3. Submitted to Stellar Testnet
+4. Confirmed through Horizon
+5. Linked to Stellar Expert
+
+PromptRail never handles the user's private key.
+
+---
+
+## Architecture
+
+```text
+                    ┌─────────────────────┐
+                    │      React UI       │
+                    │       + Vite        │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┴────────────────┐
+              │                                 │
+              ▼                                 ▼
+┌─────────────────────────┐        ┌─────────────────────────┐
+│ Stellar Wallets Kit     │        │ Generated TS Bindings   │
+│                         │        │                         │
+│ Freighter               │        │ PromptRail Registry     │
+│ Albedo                  │        └────────────┬────────────┘
+│ xBull                   │                     │
+└────────────┬────────────┘                     ▼
+             │                      ┌─────────────────────────┐
+             │                      │ Stellar Soroban RPC     │
+             │                      │        Testnet          │
+             │                      └────────────┬────────────┘
+             │                                   │
+             │                                   ▼
+             │                      ┌─────────────────────────┐
+             │                      │ PromptRail Registry     │
+             │                      │ Soroban Contract        │
+             │                      └─────────────────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│ Stellar Horizon         │
+│ Testnet XLM Payments    │
+└─────────────────────────┘
 ```
 
 ---
 
-### Install Dependencies
+## Smart Contract Security
+
+The Registry contract includes:
+
+- `owner.require_auth()` on state-changing methods
+- Maximum API name length
+- Positive price requirement
+- Maximum price bound
+- Duplicate registration protection
+- Typed contract errors
+- Contract events
+- Read-only `get()` behavior
+- Owner-controlled price updates
+- Owner-controlled active status
+
+Current test suite:
+
+```text
+15 passed
+0 failed
+```
+
+Test coverage includes:
+
+- Successful registration
+- Missing authorization
+- Authorization tree
+- Duplicate registration
+- Empty name
+- Oversized name
+- Zero price
+- Negative price
+- Excessive price
+- Missing endpoint
+- Price update
+- Invalid price update
+- Endpoint disable
+- Registry reads
+- Event emission
+
+See [SECURITY.md](./SECURITY.md) for the full security review.
+
+---
+
+## Contract Build
+
+Latest verified optimized WASM build:
+
+```text
+WASM size:
+5192 bytes
+
+WASM hash:
+650c9e433562d411bbaa471c616684c230ac7ff65e402354f2e402f748889270
+```
+
+Exported functions:
+
+```text
+get
+register
+set_active
+update_price
+```
+
+---
+
+## Tech Stack
+
+Frontend:
+
+```text
+React
+TypeScript
+Vite
+@stellar/stellar-sdk
+@creit.tech/stellar-wallets-kit
+```
+
+Blockchain:
+
+```text
+Stellar Testnet
+Soroban
+Rust
+Stellar CLI
+```
+
+Contract client:
+
+```text
+Generated TypeScript Soroban bindings
+```
+
+---
+
+## Development
+
+Clone the repository:
+
+```bash
+git clone https://github.com/barbarosalagoz/promptrail.git
+cd promptrail
+```
+
+Checkout Yellow Belt:
+
+```bash
+git checkout yellow-belt
+```
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
----
-
-### Start the Development Server
+Start the development server:
 
 ```bash
 npm run dev
 ```
 
-Vite will provide a local development URL, typically:
+Run lint:
 
-```text
-http://localhost:5173
+```bash
+npm run lint
 ```
 
-Open it in a browser where the Freighter extension is installed.
+Build production frontend:
 
----
-
-## Using PromptRail
-
-### 1. Connect Freighter
-
-Click:
-
-```text
-Connect Freighter
-```
-
-Approve the connection request inside Freighter.
-
----
-
-### 2. Switch to Testnet
-
-PromptRail verifies the active Stellar network.
-
-The application should display:
-
-```text
-✓ Stellar Testnet
-Ready for test transactions.
+```bash
+npm run build
 ```
 
 ---
 
-### 3. Fund Your Testnet Wallet
+## Soroban Development
 
-A Stellar Testnet account must be funded before it exists on the Testnet ledger.
+Enter the Soroban workspace:
 
-Use Stellar's Testnet funding tools to obtain test XLM.
+```bash
+cd soroban
+```
 
-Testnet XLM has no monetary value.
+Run tests:
+
+```bash
+cargo test
+```
+
+Run formatting verification:
+
+```bash
+cargo fmt --check
+```
+
+Run Clippy:
+
+```bash
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+Build the optimized contract:
+
+```bash
+stellar contract build
+```
+
+Run Rust dependency audit:
+
+```bash
+cargo audit
+```
 
 ---
 
-### 4. Check Your Balance
+## Generated Contract Bindings
 
-After the Testnet account is funded, PromptRail retrieves and displays the current XLM balance.
+The TypeScript client is generated directly from the deployed Testnet contract:
+
+```powershell
+stellar contract bindings typescript `
+  --network testnet `
+  --contract-id CD5OS7U3PO3TFSRKZXV4ZH3AQFKWZSGAPE6ENGBBXCQRLTGDCZF5XB26 `
+  --output-dir .\packages\promptrail_registry `
+  --overwrite
+```
+
+This avoids manually duplicating the Soroban contract interface in frontend code.
 
 ---
 
-### 5. Send XLM
+## Screenshots
 
-Enter:
+### Multi-wallet Selection
 
-```text
-Recipient: G...
-Amount: 1
-```
-
-Click:
+Expected file:
 
 ```text
-Send XLM
+docs/screenshots/wallet-options.png
 ```
 
-Freighter will open a transaction approval request.
+### Wallet-signed Registry Write
 
-Review the transaction and approve the signature.
+Expected file:
+
+```text
+docs/screenshots/registry-write-success.png
+```
+
+### Live Registry Events
+
+Expected file:
+
+```text
+docs/screenshots/live-registry-events.png
+```
 
 ---
 
-### 6. Transaction Confirmation
+## Yellow Belt Checklist
 
-After Horizon accepts the transaction, PromptRail displays:
-
-```text
-✓ Payment successful
-
-Transaction Hash
-xxxxxxxxxxxx...xxxxxxxxxxxx
-
-View transaction ↗
-```
-
-The wallet balance is refreshed automatically after confirmation.
+- [x] Stellar wallet connection
+- [x] Three wallet options
+- [x] Wallet failure handling
+- [x] Stellar Testnet enforcement
+- [x] Soroban smart contract
+- [x] Contract deployed to Testnet
+- [x] Frontend contract read
+- [x] Frontend wallet-signed contract write
+- [x] Transaction lifecycle UI
+- [x] Successful transaction verification
+- [x] Contract events
+- [x] Live frontend event synchronization
+- [x] Contract security tests
+- [x] Frontend dependency security review
+- [x] Rust dependency security review
+- [ ] Production Yellow Belt deployment
+- [ ] Final screenshots committed
 
 ---
 
 ## Security
 
-PromptRail never requests, stores, or handles a user's private key.
+PromptRail is a Testnet demonstration project.
 
-Transaction signing occurs inside Freighter.
+Do not send real funds to Testnet addresses shown in this repository.
 
-The application only receives:
+Private keys, wallet seeds and signing secrets must never be committed.
 
-* The public Stellar address
-* Wallet network information
-* Signed transaction XDR after user approval
-
-This project currently operates exclusively on **Stellar Testnet**.
+See [SECURITY.md](./SECURITY.md).
 
 ---
 
-## Project Structure
+## Repository
+
+https://github.com/barbarosalagoz/promptrail
+
+Yellow Belt development branch:
 
 ```text
-promptrail/
-│
-├── docs/
-│   └── screenshots/
-│       ├── wallet-connected.png
-│       ├── balance-testnet.png
-│       ├── payment-success.png
-│       └── payment-error.png
-│
-├── src/
-│   ├── App.tsx
-│   ├── App.css
-│   ├── index.css
-│   └── main.tsx
-│
-├── public/
-│
-├── package.json
-├── package-lock.json
-├── tsconfig.json
-├── vite.config.ts
-└── README.md
+yellow-belt
 ```
-
----
-
-## Development Progress
-
-PromptRail was developed incrementally with meaningful Git commits covering:
-
-1. Project initialization
-2. Base dashboard interface
-3. Freighter wallet integration
-4. Stellar Testnet network validation
-5. XLM balance handling
-6. Signed XLM Testnet payments
-7. Transaction screenshots and testing
-8. Project documentation
-9. Deployment preparation
-10. Submission preparation
-
----
-
-## White Belt Learning Outcomes
-
-This project demonstrates practical understanding of:
-
-* Stellar account architecture
-* Stellar public addresses
-* Testnet development
-* Horizon account queries
-* XLM balances
-* Stellar transactions
-* Payment operations
-* XDR serialization
-* Wallet-based transaction signing
-* Transaction submission
-* Transaction hashes
-* Blockchain explorer verification
-* User-facing Web3 error handling
-
----
-
-## Future Vision
-
-PromptRail Launchpad is the first stage of a broader machine-payment infrastructure project.
-
-Future versions may introduce:
-
-* Soroban smart contracts
-* Paid API endpoints
-* Stablecoin payments
-* Usage-based API billing
-* AI agent payments
-* Machine-to-machine payment flows
-* Developer SDKs
-* Payment analytics
-* Mainnet support
-
-The long-term idea is simple:
-
-> Make digital services directly purchasable by software.
-
----
-
-## Challenge
-
-Built for:
-
-**Stellar Journey to Mastery — White Belt**
-
-Network:
-
-**Stellar Testnet**
 
 ---
 
 ## License
 
-MIT
+Built as part of the Stellar Journey to Mastery builder challenge.
