@@ -2,7 +2,7 @@
 
 **Smart contract rails for machine payments on Stellar.**
 
-PromptRail is a Stellar Testnet dApp built for the Rise In Stellar Journey to Mastery Yellow Belt challenge.
+PromptRail is a Stellar Testnet dApp built for the **Rise In Stellar Journey to Mastery — Yellow Belt** challenge.
 
 The Yellow Belt version extends the original wallet/payment prototype with:
 
@@ -14,17 +14,17 @@ The Yellow Belt version extends the original wallet/payment prototype with:
 - Contract-filtered live event activity
 - Testnet XLM payments
 
-> Network: **Stellar Testnet**
+> **Network:** Stellar Testnet
 
 ---
 
 ## Live Demo
 
-Deployment URL will be added after the Yellow Belt production deployment.
+**Production:** https://promptrail-ten.vercel.app
 
 ---
 
-## Yellow Belt Features
+## Yellow Belt Highlights
 
 ### Multi-wallet support
 
@@ -34,24 +34,25 @@ PromptRail uses Stellar Wallets Kit with an explicit wallet allowlist:
 - Albedo
 - xBull
 
-The application does not use the full `defaultModules()` wallet set.
+The app does not use Wallets Kit `defaultModules()`.
 
-Supported wallet failures include:
+Handled connection/signing cases include:
 
 - Wallet unavailable
 - User rejected request
 - Wrong Stellar network
 - Wallet disconnected
 - Signing failure
-- Insufficient XLM balance
+
+Classic XLM payment flows also surface insufficient-balance and Stellar transaction failures.
 
 ---
 
 ## Soroban Registry
 
-PromptRail Registry stores API endpoint metadata directly on Stellar Testnet.
+PromptRail Registry stores API endpoint metadata on Stellar Testnet.
 
-Each registered endpoint contains:
+Each Registry entry contains:
 
 ```text
 owner
@@ -60,7 +61,7 @@ price
 active
 ```
 
-The current Yellow Belt contract supports:
+The Yellow Belt contract exports:
 
 ```text
 register
@@ -75,13 +76,13 @@ set_active
 CD5OS7U3PO3TFSRKZXV4ZH3AQFKWZSGAPE6ENGBBXCQRLTGDCZF5XB26
 ```
 
-Network:
+### Network
 
 ```text
 Stellar Testnet
 ```
 
-Deployer public key:
+### Deployer Public Key
 
 ```text
 GD4ZZVS4TTHJG5MVVQ75KWKEDGKONSAR4HHZH6YIMYWQPEZXH6EQWG3A
@@ -91,7 +92,7 @@ No deployer private key or seed is stored in this repository.
 
 ---
 
-## Verified Contract Transaction
+## Verified Contract Call
 
 Initial verified Registry registration transaction:
 
@@ -117,13 +118,15 @@ Explorer:
 
 https://stellar.expert/explorer/testnet/tx/b7d372e76ac6b83662f68072d21fe3cd202406c9efe6126ef423a16d6cc867b9
 
+A separate frontend wallet-signed Registry registration is shown in the screenshots below.
+
 ---
 
 ## Wallet-signed Registry Writes
 
 Registry writes are initiated by the frontend and signed by the connected Stellar wallet.
 
-The UI exposes the full transaction state:
+The UI exposes the transaction lifecycle:
 
 ```text
 PREPARING
@@ -135,9 +138,9 @@ PENDING
 SUCCESS / FAILED
 ```
 
-PromptRail does not display a successful contract write until the Soroban transaction has finalized.
+PromptRail only displays a successful Registry write after the Soroban transaction has finalized.
 
-Before signing, the application validates:
+Before signing, the frontend validates:
 
 - Connected account
 - Stellar Testnet network
@@ -146,9 +149,9 @@ Before signing, the application validates:
 - UTF-8 name length
 - Price bounds
 - Simulated contract result
-- Required non-invoker authorization
+- Unexpected non-invoker authorization requirements
 
-The contract itself independently enforces owner authorization with `require_auth()`.
+The contract independently enforces owner authorization with `require_auth()` on state-changing methods.
 
 ---
 
@@ -158,7 +161,7 @@ PromptRail includes a live contract event feed.
 
 The frontend polls Stellar RPC approximately every 3 seconds and filters events to the deployed PromptRail Registry contract.
 
-Supported Registry activity:
+Supported Registry event types:
 
 ```text
 EndpointRegistered
@@ -166,14 +169,15 @@ PriceUpdated
 StatusChanged
 ```
 
-The feed:
+The event service:
 
 - Filters by exact contract ID
 - Decodes Soroban event values
 - Deduplicates events by event ID
 - Tracks the RPC cursor
 - Prevents overlapping polling requests
-- Displays the owner
+- Ignores unsupported event types
+- Displays the event owner
 - Displays the ledger
 - Links to the originating transaction
 
@@ -183,14 +187,14 @@ This provides near-real-time synchronization between on-chain Registry activity 
 
 ## Machine Payments
 
-The application also retains the original PromptRail XLM payment functionality.
+PromptRail also retains the original Testnet XLM payment flow.
 
 Payments are:
 
-1. Built locally
+1. Built locally in the browser
 2. Signed by the connected wallet
-3. Submitted to Stellar Testnet
-4. Confirmed through Horizon
+3. Submitted to Stellar Testnet through Horizon
+4. Confirmed by Stellar
 5. Linked to Stellar Expert
 
 PromptRail never handles the user's private key.
@@ -241,16 +245,16 @@ The Registry contract includes:
 
 - `owner.require_auth()` on state-changing methods
 - Maximum API name length
-- Positive price requirement
+- Positive-price requirement
 - Maximum price bound
 - Duplicate registration protection
 - Typed contract errors
 - Contract events
-- Read-only `get()` behavior
+- Side-effect-free `get()`
 - Owner-controlled price updates
 - Owner-controlled active status
 
-Current test suite:
+Final local contract test result:
 
 ```text
 15 passed
@@ -267,15 +271,15 @@ Test coverage includes:
 - Oversized name
 - Zero price
 - Negative price
-- Excessive price
+- Price above maximum
 - Missing endpoint
+- Registry reads
 - Price update
 - Invalid price update
 - Endpoint disable
-- Registry reads
 - Event emission
 
-See [SECURITY.md](./SECURITY.md) for the full security review.
+See [SECURITY.md](./SECURITY.md) for the detailed security review.
 
 ---
 
@@ -304,7 +308,7 @@ update_price
 
 ## Tech Stack
 
-Frontend:
+### Frontend
 
 ```text
 React
@@ -314,7 +318,7 @@ Vite
 @creit.tech/stellar-wallets-kit
 ```
 
-Blockchain:
+### Blockchain
 
 ```text
 Stellar Testnet
@@ -323,7 +327,7 @@ Rust
 Stellar CLI
 ```
 
-Contract client:
+### Contract Client
 
 ```text
 Generated TypeScript Soroban bindings
@@ -340,7 +344,7 @@ git clone https://github.com/barbarosalagoz/promptrail.git
 cd promptrail
 ```
 
-Checkout Yellow Belt:
+Checkout the Yellow Belt branch:
 
 ```bash
 git checkout yellow-belt
@@ -364,7 +368,7 @@ Run lint:
 npm run lint
 ```
 
-Build production frontend:
+Build the production frontend:
 
 ```bash
 npm run build
@@ -392,7 +396,7 @@ Run formatting verification:
 cargo fmt --check
 ```
 
-Run Clippy:
+Run Clippy with warnings denied:
 
 ```bash
 cargo clippy --all-targets --all-features -- -D warnings
@@ -404,7 +408,7 @@ Build the optimized contract:
 stellar contract build
 ```
 
-Run Rust dependency audit:
+Run the Rust dependency audit:
 
 ```bash
 cargo audit
@@ -414,7 +418,7 @@ cargo audit
 
 ## Generated Contract Bindings
 
-The TypeScript client is generated directly from the deployed Testnet contract:
+The TypeScript client is generated from the deployed Testnet contract:
 
 ```powershell
 stellar contract bindings typescript `
@@ -424,7 +428,7 @@ stellar contract bindings typescript `
   --overwrite
 ```
 
-This avoids manually duplicating the Soroban contract interface in frontend code.
+This keeps the frontend contract interface aligned with the deployed Soroban contract.
 
 ---
 
@@ -492,19 +496,40 @@ Contract-filtered Stellar Testnet events synchronized into the PromptRail fronte
 - [x] Frontend dependency security review
 - [x] Rust dependency security review
 - [x] Final screenshots committed
-- [ ] Production Yellow Belt deployment
+- [x] Production Yellow Belt deployment
 
 ---
 
-## Security
+## Security Notes
 
-PromptRail is a Testnet demonstration project.
+PromptRail Yellow Belt is a **Testnet demonstration project**, not a production financial-security certification.
 
 Do not send real funds to Testnet addresses shown in this repository.
 
 Private keys, wallet seeds and signing secrets must never be committed.
 
-See [SECURITY.md](./SECURITY.md).
+The final local security review recorded:
+
+```text
+Frontend npm audit:
+0 Critical
+0 High
+5 Moderate
+13 Low
+
+Soroban:
+15/15 tests passing
+cargo fmt clean
+clippy clean with -D warnings
+optimized WASM build successful
+
+cargo audit:
+No known vulnerability
+1 transitive unmaintained warning:
+paste 1.0.15 / RUSTSEC-2024-0436
+```
+
+See [SECURITY.md](./SECURITY.md) for the full review, including Wallets Kit transitive dependency analysis and the Scout toolchain limitation.
 
 ---
 
@@ -512,7 +537,7 @@ See [SECURITY.md](./SECURITY.md).
 
 https://github.com/barbarosalagoz/promptrail
 
-Yellow Belt development branch:
+Yellow Belt branch:
 
 ```text
 yellow-belt
@@ -520,6 +545,6 @@ yellow-belt
 
 ---
 
-## License
+## Challenge Context
 
-Built as part of the Stellar Journey to Mastery builder challenge.
+Built as part of the **Stellar Journey to Mastery** builder challenge.
