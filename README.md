@@ -20,7 +20,24 @@ PromptRail is designed as the first technical foundation for a broader vision: e
 
 ## Live Demo
 
-Deployment link will be added after production deployment.
+[Deployment link is here.](https://promptrail-ten.vercel.app/)
+
+---
+
+### Deployment Status
+
+PromptRail is deployed publicly on Vercel and has been tested end-to-end on Stellar Testnet.
+
+Verified production flow:
+
+- ✅ Freighter wallet connection
+- ✅ Stellar Testnet detection
+- ✅ XLM balance retrieval
+- ✅ XLM transaction creation
+- ✅ Freighter transaction signing
+- ✅ Stellar Testnet submission
+- ✅ Transaction confirmation
+- ✅ Transaction hash and explorer link
 
 ---
 
@@ -43,7 +60,7 @@ Deployment link will be added after production deployment.
 | Error handling                     | ✅      |
 | Public GitHub repository           | ✅      |
 | 10+ meaningful commits             | ✅      |
-| Public deployment                  | ⏳      |
+| Public deployment                  | ✅      |
 
 ---
 
@@ -250,7 +267,7 @@ Freighter must be configured to use **Stellar Testnet**.
 ### Clone the Repository
 
 ```bash
-git clone <YOUR-GITHUB-REPOSITORY-URL>
+git clone [<YOUR-GITHUB-REPOSITORY-URL>](https://github.com/barbarosalagoz/promptrail.git)
 cd promptrail
 ```
 
