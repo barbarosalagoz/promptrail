@@ -41,6 +41,7 @@ function xlmToStroops(value: string): bigint | null {
 
   try {
     const whole = BigInt(wholePart);
+
     const fraction = BigInt(
       fractionPart.padEnd(7, "0"),
     );
@@ -136,7 +137,7 @@ function App() {
     networkPassphrase === Networks.TESTNET;
 
   /*
-   * Fetch XLM balance from Horizon Testnet.
+   * Fetch native XLM balance from Horizon Testnet.
    */
   const fetchBalance = async (
     address: string,
@@ -196,18 +197,16 @@ function App() {
   };
 
   /*
-   * Connect using Stellar Wallets Kit.
-   *
-   * The wallet service exposes only the explicitly
-   * enabled wallets:
-   * Freighter, Albedo and xBull.
+   * Connect through Stellar Wallets Kit.
    */
   const handleConnectWallet =
     async () => {
       try {
         setConnecting(true);
+
         setConnectionError(null);
         setBalanceError(null);
+
         setTransactionError(null);
         setTransactionHash(null);
 
@@ -238,6 +237,7 @@ function App() {
 
         setWalletAddress(null);
         setNetwork(null);
+
         setNetworkPassphrase(null);
         setXlmBalance(null);
 
@@ -250,7 +250,7 @@ function App() {
     };
 
   /*
-   * Disconnect both Wallets Kit and local UI state.
+   * Disconnect Wallets Kit and clear local UI state.
    */
   const handleDisconnectWallet =
     async () => {
@@ -271,6 +271,7 @@ function App() {
       } finally {
         setWalletAddress(null);
         setNetwork(null);
+
         setNetworkPassphrase(null);
         setXlmBalance(null);
 
@@ -289,10 +290,7 @@ function App() {
     };
 
   /*
-   * Re-read the active wallet/account/network.
-   *
-   * This also protects us against a wallet account
-   * change that happens outside the PromptRail UI.
+   * Recheck current wallet and network.
    */
   const recheckNetwork = async () => {
     try {
@@ -326,6 +324,7 @@ function App() {
 
       setNetwork(null);
       setNetworkPassphrase(null);
+
       setXlmBalance(null);
 
       setConnectionError(
@@ -335,7 +334,7 @@ function App() {
   };
 
   /*
-   * Refresh XLM balance.
+   * Refresh balance.
    */
   const refreshBalance = async () => {
     if (
@@ -352,11 +351,6 @@ function App() {
 
   /*
    * Send XLM on Stellar Testnet.
-   *
-   * Transaction construction remains local.
-   * Private keys never enter PromptRail.
-   * Signing is delegated to the active wallet
-   * through Stellar Wallets Kit.
    */
   const sendXlm = async (
     event: FormEvent<HTMLFormElement>,
@@ -367,6 +361,7 @@ function App() {
       setTransactionError(
         "Connect a wallet before creating a transaction.",
       );
+
       return;
     }
 
@@ -377,7 +372,8 @@ function App() {
       setTransactionHash(null);
 
       /*
-       * 1. Re-verify the active wallet and Testnet.
+       * 1. Recheck wallet + Testnet immediately
+       * before transaction construction.
        */
       const connected =
         await getConnectedWallet();
@@ -393,8 +389,8 @@ function App() {
       }
 
       /*
-       * Do not silently sign with a different account
-       * if the user switched accounts in their wallet.
+       * Prevent signing if the user changed accounts
+       * outside PromptRail.
        */
       if (
         connected.address !==
@@ -416,7 +412,7 @@ function App() {
       );
 
       /*
-       * 2. Validate recipient.
+       * 2. Validate destination.
        */
       const cleanDestination =
         destination.trim();
@@ -441,8 +437,8 @@ function App() {
       }
 
       /*
-       * 3. Validate amount without JavaScript
-       * floating-point arithmetic.
+       * 3. Validate XLM amount using integer
+       * stroops instead of floating-point maths.
        */
       const cleanAmount =
         amount.trim();
@@ -460,11 +456,7 @@ function App() {
       }
 
       /*
-       * Preflight balance check.
-       *
-       * Stellar may still reject a transaction because
-       * of reserves/fees. That is handled separately
-       * below as an insufficient-balance error.
+       * Basic preflight balance check.
        */
       if (xlmBalance) {
         const balanceStroops =
@@ -482,8 +474,8 @@ function App() {
       }
 
       /*
-       * 4. Recipient must exist on Testnet for
-       * a standard payment operation.
+       * 4. Standard payment requires recipient
+       * account to already exist.
        */
       try {
         await horizonServer.loadAccount(
@@ -504,7 +496,7 @@ function App() {
         );
 
       /*
-       * 6. Build the unsigned transaction.
+       * 6. Build unsigned transaction.
        */
       const transaction =
         new TransactionBuilder(
@@ -519,8 +511,10 @@ function App() {
             Operation.payment({
               destination:
                 cleanDestination,
+
               asset:
                 Asset.native(),
+
               amount:
                 cleanAmount,
             }),
@@ -534,18 +528,19 @@ function App() {
           .build();
 
       /*
-       * 7. Encode unsigned transaction as XDR.
+       * 7. Serialize unsigned transaction.
+       *
+       * IMPORTANT:
+       * Stellar SDK 16.x uses toXDR().
+       * SDK 17 renamed this to toXdr().
        */
       const unsignedXdr =
         transaction
           .toEnvelope()
-          .toXdr("base64");
+          .toXDR("base64");
 
       /*
-       * 8. Ask the currently selected wallet to sign.
-       *
-       * wallet.ts performs an additional Testnet
-       * check immediately before signing.
+       * 8. Sign through the selected wallet.
        */
       const signedTxXdr =
         await signWalletTransaction(
@@ -554,10 +549,13 @@ function App() {
         );
 
       /*
-       * 9. Decode signed XDR.
+       * 9. Parse signed transaction.
+       *
+       * IMPORTANT:
+       * Stellar SDK 16.x uses fromXDR().
        */
       const signedTransaction =
-        TransactionBuilder.fromXdr(
+        TransactionBuilder.fromXDR(
           signedTxXdr,
           Networks.TESTNET,
         );
@@ -571,7 +569,7 @@ function App() {
         );
 
       /*
-       * 11. Confirm success.
+       * 11. Success.
        */
       setTransactionHash(
         result.hash,
@@ -589,7 +587,7 @@ function App() {
       );
 
       /*
-       * Wallet-specific error states.
+       * Wallet-specific errors.
        */
       if (
         error instanceof
@@ -782,6 +780,7 @@ function App() {
                         {
                           minimumFractionDigits:
                             2,
+
                           maximumFractionDigits:
                             7,
                         },
