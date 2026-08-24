@@ -17,6 +17,7 @@ button {
 .app {
   min-height: 100vh;
   padding: 28px 64px;
+
   background:
     radial-gradient(
       circle at 50% 0%,
@@ -24,7 +25,9 @@ button {
       transparent 32%
     ),
     #090b10;
+
   color: #f7f7fb;
+
   font-family:
     Inter,
     ui-sans-serif,
@@ -35,9 +38,12 @@ button {
     sans-serif;
 }
 
+/* NAVBAR */
+
 .navbar {
   width: min(1180px, 100%);
   margin: 0 auto;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -52,14 +58,25 @@ button {
 .brand-mark {
   width: 42px;
   height: 42px;
+
   border-radius: 12px;
+
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #8b5cf6, #c084fc);
+
+  background: linear-gradient(
+    135deg,
+    #8b5cf6,
+    #c084fc
+  );
+
   color: white;
+
   font-weight: 800;
   font-size: 20px;
-  box-shadow: 0 0 30px rgba(139, 92, 246, 0.25);
+
+  box-shadow:
+    0 0 30px rgba(139, 92, 246, 0.25);
 }
 
 .brand h1 {
@@ -72,14 +89,20 @@ button {
   font-size: 12px;
 }
 
+/* NETWORK */
+
 .network-badge {
   display: flex;
   align-items: center;
   gap: 8px;
+
   padding: 9px 13px;
+
   border: 1px solid #252936;
   border-radius: 999px;
+
   color: #b8bdc9;
+
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -88,21 +111,32 @@ button {
 .network-dot {
   width: 8px;
   height: 8px;
+
   border-radius: 50%;
+
   background: #48e0a4;
-  box-shadow: 0 0 12px rgba(72, 224, 164, 0.7);
+
+  box-shadow:
+    0 0 12px rgba(72, 224, 164, 0.7);
 }
+
+/* HERO */
 
 .hero {
   max-width: 760px;
+
   margin: 120px auto 48px;
+
   text-align: center;
 }
 
 .eyebrow {
   display: inline-block;
+
   margin-bottom: 22px;
+
   color: #a78bfa;
+
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.16em;
@@ -110,27 +144,44 @@ button {
 
 .hero h2 {
   margin: 0;
+
   font-size: clamp(42px, 6vw, 72px);
+
   line-height: 1.02;
+
   letter-spacing: -0.05em;
 }
 
 .hero p {
   max-width: 580px;
+
   margin: 26px auto 0;
+
   color: #959baa;
+
   font-size: 17px;
+
   line-height: 1.7;
 }
 
+/* WALLET CARD */
+
 .wallet-card {
   width: min(480px, 100%);
+
   margin: 0 auto;
+
   padding: 34px;
+
   text-align: center;
+
   border: 1px solid #242836;
+
   border-radius: 22px;
-  background: rgba(16, 19, 27, 0.82);
+
+  background:
+    rgba(16, 19, 27, 0.82);
+
   box-shadow:
     0 24px 80px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -139,58 +190,233 @@ button {
 .card-icon {
   width: 54px;
   height: 54px;
+
   margin: 0 auto 20px;
+
   display: grid;
   place-items: center;
+
   border-radius: 16px;
-  background: rgba(139, 92, 246, 0.12);
+
+  background:
+    rgba(139, 92, 246, 0.12);
+
   color: #a78bfa;
+
   font-size: 25px;
 }
 
 .wallet-card h3 {
   margin: 0;
+
   font-size: 22px;
 }
 
 .wallet-card p {
   margin: 12px 0 26px;
+
   color: #858b99;
+
   line-height: 1.6;
 }
 
+/* BUTTONS */
+
 .primary-button {
   width: 100%;
+
+  display: block;
+
   border: 0;
+
   border-radius: 12px;
+
   padding: 14px 20px;
+
   cursor: pointer;
-  background: linear-gradient(135deg, #7c3aed, #a855f7);
+
+  background:
+    linear-gradient(
+      135deg,
+      #7c3aed,
+      #a855f7
+    );
+
   color: white;
+
   font-weight: 700;
+
+  text-decoration: none;
+
   transition:
     transform 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
 }
 
-.primary-button:hover {
+.primary-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(139, 92, 246, 0.3);
+
+  box-shadow:
+    0 10px 28px rgba(139, 92, 246, 0.3);
 }
+
+.primary-button:disabled {
+  opacity: 0.6;
+
+  cursor: wait;
+}
+
+.install-link {
+  text-align: center;
+}
+
+.secondary-button {
+  width: 100%;
+
+  margin-top: 12px;
+
+  padding: 12px 20px;
+
+  border: 1px solid #343947;
+
+  border-radius: 12px;
+
+  background: transparent;
+
+  color: #b9bec9;
+
+  cursor: pointer;
+}
+
+.secondary-button:hover {
+  background:
+    rgba(255, 255, 255, 0.04);
+}
+
+/* CONNECTED WALLET */
+
+.connected-status {
+  margin-bottom: 14px;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  color: #6ee7b7;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.connected-dot {
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background: #48e0a4;
+
+  box-shadow:
+    0 0 10px rgba(72, 224, 164, 0.7);
+}
+
+.wallet-address {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 8px;
+
+  padding: 16px;
+
+  border: 1px solid #2a2f3d;
+
+  border-radius: 12px;
+
+  background: #0c0f16;
+
+  color: #c7cbd4;
+
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+}
+
+.wallet-address-label {
+  color: #686e7c;
+
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+
+  font-size: 10px;
+
+  font-weight: 700;
+
+  letter-spacing: 0.12em;
+
+  text-transform: uppercase;
+}
+
+.wallet-address strong {
+  font-size: 14px;
+}
+
+/* ERRORS */
+
+.connection-error {
+  margin-top: 16px;
+
+  padding: 12px;
+
+  border:
+    1px solid rgba(248, 113, 113, 0.25);
+
+  border-radius: 10px;
+
+  background:
+    rgba(248, 113, 113, 0.05);
+
+  color: #fca5a5;
+
+  font-size: 13px;
+
+  line-height: 1.5;
+}
+
+/* SMALL NOTE */
 
 .card-note {
   display: block;
+
   margin-top: 16px;
+
   color: #5f6573;
+
   font-size: 11px;
 }
 
+/* FOOTER */
+
 footer {
   margin: 48px auto 20px;
+
   text-align: center;
+
   color: #4e5360;
+
   font-size: 12px;
 }
+
+/* MOBILE */
 
 @media (max-width: 640px) {
   .app {
