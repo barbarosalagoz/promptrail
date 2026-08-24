@@ -1,17 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 
 import {
-  isConnected,
-  requestAccess,
-  getNetworkDetails,
-  signTransaction,
-} from "@stellar/freighter-api";
-
-import {
-  Horizon,
   Asset,
   BASE_FEE,
+  Horizon,
   Memo,
   Networks,
   Operation,
@@ -19,16 +12,81 @@ import {
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
 
+import {
+  connectWallet as connectStellarWallet,
+  disconnectWallet as disconnectStellarWallet,
+  getConnectedWallet,
+  PromptRailWalletError,
+  signTransaction as signWalletTransaction,
+  SUPPORTED_WALLETS,
+} from "./services/wallet";
+
 import "./App.css";
 
 const horizonServer = new Horizon.Server(
-  "https://horizon-testnet.stellar.org"
+  "https://horizon-testnet.stellar.org",
 );
 
-function App() {
-  const [freighterInstalled, setFreighterInstalled] =
-    useState<boolean | null>(null);
+const STROOPS_PER_XLM = 10_000_000n;
 
+function xlmToStroops(value: string): bigint | null {
+  const cleanValue = value.trim();
+
+  if (!/^\d+(?:\.\d{1,7})?$/.test(cleanValue)) {
+    return null;
+  }
+
+  const [wholePart, fractionPart = ""] =
+    cleanValue.split(".");
+
+  try {
+    const whole = BigInt(wholePart);
+    const fraction = BigInt(
+      fractionPart.padEnd(7, "0"),
+    );
+
+    return (
+      whole * STROOPS_PER_XLM +
+      fraction
+    );
+  } catch {
+    return null;
+  }
+}
+
+function getWalletErrorMessage(
+  error: unknown,
+): string {
+  if (error instanceof PromptRailWalletError) {
+    switch (error.code) {
+      case "USER_REJECTED":
+        return "The wallet request was rejected.";
+
+      case "WALLET_NOT_AVAILABLE":
+        return "The selected wallet is not available. Install or unlock it, then try again.";
+
+      case "WRONG_NETWORK":
+        return "PromptRail only supports Stellar Testnet. Switch your wallet to Testnet and reconnect.";
+
+      case "NOT_CONNECTED":
+        return "No active wallet connection was found. Reconnect your wallet.";
+
+      case "SIGNING_FAILED":
+        return "The wallet could not sign the transaction.";
+
+      default:
+        return error.message;
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "An unexpected wallet error occurred.";
+}
+
+function App() {
   const [walletAddress, setWalletAddress] =
     useState<string | null>(null);
 
@@ -40,6 +98,11 @@ function App() {
 
   const [network, setNetwork] =
     useState<string | null>(null);
+
+  const [
+    networkPassphrase,
+    setNetworkPassphrase,
+  ] = useState<string | null>(null);
 
   const [xlmBalance, setXlmBalance] =
     useState<string | null>(null);
@@ -59,69 +122,24 @@ function App() {
   const [sending, setSending] =
     useState(false);
 
-  const [transactionError, setTransactionError] =
-    useState<string | null>(null);
+  const [
+    transactionError,
+    setTransactionError,
+  ] = useState<string | null>(null);
 
-  const [transactionHash, setTransactionHash] =
-    useState<string | null>(null);
+  const [
+    transactionHash,
+    setTransactionHash,
+  ] = useState<string | null>(null);
 
-  /*
-   * Detect Freighter
-   */
-  useEffect(() => {
-    const checkFreighter = async () => {
-      try {
-        const result = await isConnected();
-
-        if (result.error) {
-          console.error(
-            "Freighter check error:",
-            result.error
-          );
-
-          setFreighterInstalled(false);
-          return;
-        }
-
-        setFreighterInstalled(
-          result.isConnected
-        );
-      } catch (error) {
-        console.error(
-          "Freighter detection failed:",
-          error
-        );
-
-        setFreighterInstalled(false);
-      }
-    };
-
-    checkFreighter();
-  }, []);
+  const isTestnet =
+    networkPassphrase === Networks.TESTNET;
 
   /*
-   * Read active Freighter network
-   */
-  const checkNetwork = async () => {
-    const networkResult =
-      await getNetworkDetails();
-
-    if (networkResult.error) {
-      throw new Error(
-        "Could not read the Freighter network."
-      );
-    }
-
-    setNetwork(networkResult.network);
-
-    return networkResult.network;
-  };
-
-  /*
-   * Fetch XLM balance from Horizon Testnet
+   * Fetch XLM balance from Horizon Testnet.
    */
   const fetchBalance = async (
-    address: string
+    address: string,
   ) => {
     try {
       setBalanceLoading(true);
@@ -129,14 +147,13 @@ function App() {
 
       const account =
         await horizonServer.loadAccount(
-          address
+          address,
         );
 
       const nativeBalance =
         account.balances.find(
           (balance) =>
-            balance.asset_type ===
-            "native"
+            balance.asset_type === "native",
         );
 
       if (!nativeBalance) {
@@ -145,12 +162,12 @@ function App() {
       }
 
       setXlmBalance(
-        nativeBalance.balance
+        nativeBalance.balance,
       );
     } catch (error) {
       console.error(
         "Balance fetch failed:",
-        error
+        error,
       );
 
       setXlmBalance(null);
@@ -166,11 +183,11 @@ function App() {
         404
       ) {
         setBalanceError(
-          "This wallet is not funded on Stellar Testnet yet."
+          "This wallet is not funded on Stellar Testnet yet.",
         );
       } else {
         setBalanceError(
-          "Could not fetch your XLM balance from Stellar Testnet."
+          "Could not fetch your XLM balance from Stellar Testnet.",
         );
       }
     } finally {
@@ -179,158 +196,177 @@ function App() {
   };
 
   /*
-   * Connect Freighter
+   * Connect using Stellar Wallets Kit.
+   *
+   * The wallet service exposes only the explicitly
+   * enabled wallets:
+   * Freighter, Albedo and xBull.
    */
-  const connectWallet = async () => {
-    try {
-      setConnecting(true);
+  const handleConnectWallet =
+    async () => {
+      try {
+        setConnecting(true);
+        setConnectionError(null);
+        setBalanceError(null);
+        setTransactionError(null);
+        setTransactionHash(null);
 
-      setConnectionError(null);
-      setBalanceError(null);
+        const connected =
+          await connectStellarWallet();
 
-      const connectionResult =
-        await isConnected();
-
-      if (
-        !connectionResult.isConnected
-      ) {
-        setFreighterInstalled(false);
-
-        throw new Error(
-          "Freighter could not be detected. Please unlock Freighter and refresh the page."
+        setWalletAddress(
+          connected.address,
         );
-      }
 
-      const accessResult =
-        await requestAccess();
-
-      if (accessResult.error) {
-        throw new Error(
-          accessResult.error.message
+        setNetwork(
+          connected.network ||
+            "TESTNET",
         );
-      }
 
-      if (!accessResult.address) {
-        throw new Error(
-          "Freighter did not return a wallet address."
+        setNetworkPassphrase(
+          connected.networkPassphrase,
         );
-      }
 
-      const address =
-        accessResult.address;
+        await fetchBalance(
+          connected.address,
+        );
+      } catch (error) {
+        console.error(
+          "Wallet connection failed:",
+          error,
+        );
 
-      setWalletAddress(address);
-
-      const activeNetwork =
-        await checkNetwork();
-
-      if (
-        activeNetwork !== "TESTNET"
-      ) {
+        setWalletAddress(null);
+        setNetwork(null);
+        setNetworkPassphrase(null);
         setXlmBalance(null);
 
         setConnectionError(
-          `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
+          getWalletErrorMessage(error),
+        );
+      } finally {
+        setConnecting(false);
+      }
+    };
+
+  /*
+   * Disconnect both Wallets Kit and local UI state.
+   */
+  const handleDisconnectWallet =
+    async () => {
+      let disconnectError:
+        | string
+        | null = null;
+
+      try {
+        await disconnectStellarWallet();
+      } catch (error) {
+        console.error(
+          "Wallet disconnect failed:",
+          error,
         );
 
-        return;
+        disconnectError =
+          getWalletErrorMessage(error);
+      } finally {
+        setWalletAddress(null);
+        setNetwork(null);
+        setNetworkPassphrase(null);
+        setXlmBalance(null);
+
+        setBalanceError(null);
+
+        setDestination("");
+        setAmount("");
+
+        setTransactionHash(null);
+        setTransactionError(null);
+
+        setConnectionError(
+          disconnectError,
+        );
       }
-
-      await fetchBalance(address);
-    } catch (error) {
-      console.error(
-        "Wallet connection failed:",
-        error
-      );
-
-      setConnectionError(
-        error instanceof Error
-          ? error.message
-          : "Could not connect to Freighter."
-      );
-    } finally {
-      setConnecting(false);
-    }
-  };
+    };
 
   /*
-   * Disconnect from PromptRail UI
-   */
-  const disconnectWallet = () => {
-    setWalletAddress(null);
-    setNetwork(null);
-    setXlmBalance(null);
-
-    setConnectionError(null);
-    setBalanceError(null);
-
-    setDestination("");
-    setAmount("");
-
-    setTransactionHash(null);
-    setTransactionError(null);
-  };
-
-  /*
-   * Recheck network
+   * Re-read the active wallet/account/network.
+   *
+   * This also protects us against a wallet account
+   * change that happens outside the PromptRail UI.
    */
   const recheckNetwork = async () => {
     try {
       setConnectionError(null);
       setBalanceError(null);
 
-      const activeNetwork =
-        await checkNetwork();
+      const connected =
+        await getConnectedWallet();
 
-      if (
-        activeNetwork !== "TESTNET"
-      ) {
-        setXlmBalance(null);
+      setWalletAddress(
+        connected.address,
+      );
 
-        setConnectionError(
-          `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
-        );
+      setNetwork(
+        connected.network ||
+          "TESTNET",
+      );
 
-        return;
-      }
+      setNetworkPassphrase(
+        connected.networkPassphrase,
+      );
 
-      if (walletAddress) {
-        await fetchBalance(
-          walletAddress
-        );
-      }
-    } catch {
+      await fetchBalance(
+        connected.address,
+      );
+    } catch (error) {
+      console.error(
+        "Network check failed:",
+        error,
+      );
+
+      setNetwork(null);
+      setNetworkPassphrase(null);
+      setXlmBalance(null);
+
       setConnectionError(
-        "Could not check the active Stellar network."
+        getWalletErrorMessage(error),
       );
     }
   };
 
   /*
-   * Refresh XLM balance
+   * Refresh XLM balance.
    */
   const refreshBalance = async () => {
     if (
       !walletAddress ||
-      network !== "TESTNET"
+      !isTestnet
     ) {
       return;
     }
 
     await fetchBalance(
-      walletAddress
+      walletAddress,
     );
   };
 
   /*
-   * Send XLM on Stellar Testnet
+   * Send XLM on Stellar Testnet.
+   *
+   * Transaction construction remains local.
+   * Private keys never enter PromptRail.
+   * Signing is delegated to the active wallet
+   * through Stellar Wallets Kit.
    */
   const sendXlm = async (
-    event: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
 
     if (!walletAddress) {
+      setTransactionError(
+        "Connect a wallet before creating a transaction.",
+      );
       return;
     }
 
@@ -341,32 +377,57 @@ function App() {
       setTransactionHash(null);
 
       /*
-       * 1. Verify Testnet
+       * 1. Re-verify the active wallet and Testnet.
        */
-      const activeNetwork =
-        await checkNetwork();
+      const connected =
+        await getConnectedWallet();
 
       if (
-        activeNetwork !== "TESTNET"
+        connected.networkPassphrase !==
+        Networks.TESTNET
       ) {
-        throw new Error(
-          "Switch Freighter to Stellar Testnet before sending XLM."
+        throw new PromptRailWalletError(
+          "WRONG_NETWORK",
+          "Refusing to transact outside Stellar Testnet.",
         );
       }
 
       /*
-       * 2. Validate recipient
+       * Do not silently sign with a different account
+       * if the user switched accounts in their wallet.
+       */
+      if (
+        connected.address !==
+        walletAddress
+      ) {
+        throw new PromptRailWalletError(
+          "NOT_CONNECTED",
+          "The active wallet account changed. Reconnect before signing.",
+        );
+      }
+
+      setNetwork(
+        connected.network ||
+          "TESTNET",
+      );
+
+      setNetworkPassphrase(
+        connected.networkPassphrase,
+      );
+
+      /*
+       * 2. Validate recipient.
        */
       const cleanDestination =
         destination.trim();
 
       if (
         !StrKey.isValidEd25519PublicKey(
-          cleanDestination
+          cleanDestination,
         )
       ) {
         throw new Error(
-          "Enter a valid Stellar G... address."
+          "Enter a valid Stellar G... address.",
         );
       }
 
@@ -375,74 +436,75 @@ function App() {
         walletAddress
       ) {
         throw new Error(
-          "Please use a different Testnet account as the recipient."
+          "Please use a different Testnet account as the recipient.",
         );
       }
 
       /*
-       * 3. Validate amount
+       * 3. Validate amount without JavaScript
+       * floating-point arithmetic.
        */
       const cleanAmount =
         amount.trim();
 
-      const numericAmount =
-        Number(cleanAmount);
+      const amountStroops =
+        xlmToStroops(cleanAmount);
 
       if (
-        !Number.isFinite(
-          numericAmount
-        ) ||
-        numericAmount <= 0
+        amountStroops === null ||
+        amountStroops <= 0n
       ) {
         throw new Error(
-          "Enter an XLM amount greater than 0."
-        );
-      }
-
-      const decimalPlaces =
-        cleanAmount.split(".")[1]
-          ?.length ?? 0;
-
-      if (decimalPlaces > 7) {
-        throw new Error(
-          "XLM supports a maximum of 7 decimal places."
-        );
-      }
-
-      if (
-        xlmBalance &&
-        numericAmount >=
-          Number(xlmBalance)
-      ) {
-        throw new Error(
-          "The payment amount is too high for this wallet balance."
+          "Enter a valid XLM amount greater than 0 with at most 7 decimal places.",
         );
       }
 
       /*
-       * 4. Recipient must already exist
-       * on Testnet for a normal payment.
+       * Preflight balance check.
+       *
+       * Stellar may still reject a transaction because
+       * of reserves/fees. That is handled separately
+       * below as an insufficient-balance error.
+       */
+      if (xlmBalance) {
+        const balanceStroops =
+          xlmToStroops(xlmBalance);
+
+        if (
+          balanceStroops !== null &&
+          amountStroops >=
+            balanceStroops
+        ) {
+          throw new Error(
+            "Insufficient XLM balance for this payment and network fees.",
+          );
+        }
+      }
+
+      /*
+       * 4. Recipient must exist on Testnet for
+       * a standard payment operation.
        */
       try {
         await horizonServer.loadAccount(
-          cleanDestination
+          cleanDestination,
         );
       } catch {
         throw new Error(
-          "Recipient account is not funded on Stellar Testnet. Fund the recipient first."
+          "Recipient account is not funded on Stellar Testnet. Fund the recipient first.",
         );
       }
 
       /*
-       * 5. Load source account
+       * 5. Load current source account.
        */
       const sourceAccount =
         await horizonServer.loadAccount(
-          walletAddress
+          walletAddress,
         );
 
       /*
-       * 6. Build payment transaction
+       * 6. Build the unsigned transaction.
        */
       const transaction =
         new TransactionBuilder(
@@ -451,112 +513,98 @@ function App() {
             fee: BASE_FEE,
             networkPassphrase:
               Networks.TESTNET,
-          }
+          },
         )
           .addOperation(
             Operation.payment({
               destination:
                 cleanDestination,
-
               asset:
                 Asset.native(),
-
               amount:
-                numericAmount.toFixed(
-                  Math.max(
-                    1,
-                    decimalPlaces
-                  )
-                ),
-            })
+                cleanAmount,
+            }),
           )
           .addMemo(
             Memo.text(
-              "PromptRail White Belt"
-            )
+              "PromptRail Yellow Belt",
+            ),
           )
           .setTimeout(30)
           .build();
 
       /*
-       * 7. Convert transaction to Base64 XDR
-       *
-       * IMPORTANT:
-       * Current installed SDK uses toXdr(),
-       * not toXDR().
+       * 7. Encode unsigned transaction as XDR.
        */
       const unsignedXdr =
-        transaction.toEnvelope().toXdr("base64");
+        transaction
+          .toEnvelope()
+          .toXdr("base64");
 
       /*
-       * 8. Ask Freighter to sign
-       */
-      const signResult =
-        await signTransaction(
-          unsignedXdr,
-          {
-            networkPassphrase:
-              Networks.TESTNET,
-
-            address:
-              walletAddress,
-          }
-        );
-
-      if (signResult.error) {
-        throw new Error(
-          signResult.error.message
-        );
-      }
-
-      if (
-        !signResult.signedTxXdr
-      ) {
-        throw new Error(
-          "Freighter did not return a signed transaction."
-        );
-      }
-
-      /*
-       * 9. Convert signed XDR back
-       * into a Stellar transaction
+       * 8. Ask the currently selected wallet to sign.
        *
-       * IMPORTANT:
-       * Current installed SDK uses fromXdr(),
-       * not fromXDR().
+       * wallet.ts performs an additional Testnet
+       * check immediately before signing.
+       */
+      const signedTxXdr =
+        await signWalletTransaction(
+          unsignedXdr,
+          walletAddress,
+        );
+
+      /*
+       * 9. Decode signed XDR.
        */
       const signedTransaction =
         TransactionBuilder.fromXdr(
-          signResult.signedTxXdr,
-          Networks.TESTNET
+          signedTxXdr,
+          Networks.TESTNET,
         );
 
       /*
-       * 10. Submit to Stellar Testnet
+       * 10. Submit to Stellar Testnet.
        */
       const result =
         await horizonServer.submitTransaction(
-          signedTransaction
+          signedTransaction,
         );
 
       /*
-       * 11. Success
+       * 11. Confirm success.
        */
       setTransactionHash(
-        result.hash
+        result.hash,
       );
 
       setAmount("");
 
       await fetchBalance(
-        walletAddress
+        walletAddress,
       );
     } catch (error) {
       console.error(
         "Transaction failed:",
-        error
+        error,
       );
 
+      /*
+       * Wallet-specific error states.
+       */
+      if (
+        error instanceof
+        PromptRailWalletError
+      ) {
+        setTransactionError(
+          getWalletErrorMessage(error),
+        );
+
+        return;
+      }
+
+      /*
+       * Horizon transaction errors.
+       */
       const horizonError =
         error as {
           response?: {
@@ -577,10 +625,26 @@ function App() {
           ?.result_codes;
 
       if (resultCodes) {
-        const operationCode =
-          resultCodes.operations?.join(
-            ", "
+        const operationCodes =
+          resultCodes.operations ?? [];
+
+        const insufficientBalance =
+          resultCodes.transaction ===
+            "tx_insufficient_balance" ||
+          operationCodes.includes(
+            "op_underfunded",
           );
+
+        if (insufficientBalance) {
+          setTransactionError(
+            "Insufficient XLM balance to complete this transaction while maintaining Stellar reserves and fees.",
+          );
+
+          return;
+        }
+
+        const operationCode =
+          operationCodes.join(", ");
 
         setTransactionError(
           operationCode
@@ -588,7 +652,7 @@ function App() {
             : `Stellar rejected the transaction: ${
                 resultCodes.transaction ??
                 "unknown error"
-              }`
+              }`,
         );
 
         return;
@@ -597,15 +661,12 @@ function App() {
       setTransactionError(
         error instanceof Error
           ? error.message
-          : "The transaction could not be completed."
+          : "The transaction could not be completed.",
       );
     } finally {
       setSending(false);
     }
   };
-
-  const isTestnet =
-    network === "TESTNET";
 
   return (
     <main className="app">
@@ -645,26 +706,27 @@ function App() {
 
       <section className="hero">
         <div className="eyebrow">
-          STELLAR WHITE BELT
+          STELLAR YELLOW BELT
         </div>
 
         <h2>
-          The payment rail
+          Multi-wallet rails
           <br />
           for the agentic web.
         </h2>
 
         <p>
-          Connect your Stellar wallet
-          and make your first
-          machine-to-machine payment
-          on Testnet.
+          Connect your preferred Stellar
+          wallet, verify Testnet and
+          securely sign PromptRail
+          transactions without exposing
+          private keys.
         </p>
       </section>
 
       <section className="wallet-card">
         <div className="card-icon">
-          ✦
+          W
         </div>
 
         {walletAddress ? (
@@ -674,9 +736,8 @@ function App() {
             </h3>
 
             <p>
-              Your Freighter wallet
-              is connected to
-              PromptRail.
+              Your Stellar wallet is
+              connected to PromptRail.
             </p>
 
             <div className="connected-status">
@@ -692,11 +753,11 @@ function App() {
               <strong>
                 {walletAddress.slice(
                   0,
-                  10
+                  10,
                 )}
                 ...
                 {walletAddress.slice(
-                  -10
+                  -10,
                 )}
               </strong>
             </div>
@@ -715,7 +776,7 @@ function App() {
                   <>
                     <strong className="balance-value">
                       {Number(
-                        xlmBalance
+                        xlmBalance,
                       ).toLocaleString(
                         undefined,
                         {
@@ -723,7 +784,7 @@ function App() {
                             2,
                           maximumFractionDigits:
                             7,
-                        }
+                        },
                       )}{" "}
                       XLM
                     </strong>
@@ -735,12 +796,13 @@ function App() {
                   </>
                 ) : (
                   <strong className="balance-value">
-                    — XLM
+                    -- XLM
                   </strong>
                 )}
 
                 <button
                   className="balance-refresh"
+                  type="button"
                   onClick={
                     refreshBalance
                   }
@@ -756,9 +818,12 @@ function App() {
             )}
 
             {balanceError && (
-              <div className="balance-error">
+              <div
+                className="balance-error"
+                role="alert"
+              >
                 <strong>
-                  Wallet not funded
+                  Wallet balance unavailable
                 </strong>
 
                 <span>
@@ -781,14 +846,14 @@ function App() {
 
                 <strong>
                   {isTestnet
-                    ? "✓ Stellar Testnet"
-                    : `⚠ ${network}`}
+                    ? "Stellar Testnet"
+                    : network}
                 </strong>
 
                 <span>
                   {isTestnet
                     ? "Ready for test transactions."
-                    : "Switch Freighter to Testnet before continuing."}
+                    : "PromptRail blocks transactions outside Testnet."}
                 </span>
               </div>
             )}
@@ -809,9 +874,10 @@ function App() {
                     </h4>
 
                     <p>
-                      Create, sign and
-                      submit a real
-                      Stellar payment.
+                      Create locally,
+                      sign with your
+                      selected wallet and
+                      submit to Stellar.
                     </p>
                   </div>
 
@@ -824,15 +890,16 @@ function App() {
                         destination
                       }
                       onChange={(
-                        event
+                        event,
                       ) =>
                         setDestination(
                           event.target
-                            .value
+                            .value,
                         )
                       }
                       placeholder="G..."
                       autoComplete="off"
+                      spellCheck={false}
                       disabled={
                         sending
                       }
@@ -844,21 +911,21 @@ function App() {
 
                     <div className="amount-input">
                       <input
-                        type="number"
-                        min="0.0000001"
-                        step="0.0000001"
+                        type="text"
+                        inputMode="decimal"
                         value={
                           amount
                         }
                         onChange={(
-                          event
+                          event,
                         ) =>
                           setAmount(
                             event.target
-                              .value
+                              .value,
                           )
                         }
                         placeholder="1.00"
+                        autoComplete="off"
                         disabled={
                           sending
                         }
@@ -880,16 +947,20 @@ function App() {
                     }
                   >
                     {sending
-                      ? "Waiting for Freighter..."
+                      ? "Waiting for wallet..."
                       : "Send XLM"}
                   </button>
                 </form>
               )}
 
             {transactionError && (
-              <div className="transaction-result transaction-failure">
+              <div
+                className="transaction-result transaction-failure"
+                role="alert"
+                aria-live="polite"
+              >
                 <span className="result-icon">
-                  ✕
+                  !
                 </span>
 
                 <div>
@@ -907,9 +978,12 @@ function App() {
             )}
 
             {transactionHash && (
-              <div className="transaction-result transaction-success">
+              <div
+                className="transaction-result transaction-success"
+                aria-live="polite"
+              >
                 <span className="result-icon">
-                  ✓
+                  OK
                 </span>
 
                 <div>
@@ -918,9 +992,9 @@ function App() {
                   </strong>
 
                   <p>
-                    Your XLM payment
-                    was confirmed on
-                    Stellar Testnet.
+                    Your XLM payment was
+                    confirmed on Stellar
+                    Testnet.
                   </p>
 
                   <span className="hash-label">
@@ -930,11 +1004,11 @@ function App() {
                   <code>
                     {transactionHash.slice(
                       0,
-                      12
+                      12,
                     )}
                     ...
                     {transactionHash.slice(
-                      -12
+                      -12,
                     )}
                   </code>
 
@@ -943,7 +1017,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    View transaction ↗
+                    View transaction -&gt;
                   </a>
                 </div>
               </div>
@@ -951,17 +1025,19 @@ function App() {
 
             <button
               className="secondary-button"
+              type="button"
               onClick={
                 recheckNetwork
               }
             >
-              Recheck Network
+              Recheck Wallet & Network
             </button>
 
             <button
               className="disconnect-button"
+              type="button"
               onClick={
-                disconnectWallet
+                handleDisconnectWallet
               }
             >
               Disconnect Wallet
@@ -974,75 +1050,54 @@ function App() {
             </h3>
 
             <p>
-              Connect Freighter to
-              access your Stellar
-              Testnet account.
+              Choose a supported Stellar
+              wallet to access PromptRail
+              on Testnet.
             </p>
 
-            {freighterInstalled ===
-            null ? (
-              <button
-                className="primary-button"
-                disabled
-              >
-                Checking
-                Freighter...
-              </button>
-            ) : freighterInstalled ? (
-              <button
-                className="primary-button"
-                onClick={
-                  connectWallet
-                }
-                disabled={
-                  connecting
-                }
-              >
-                {connecting
-                  ? "Connecting..."
-                  : "Connect Freighter"}
-              </button>
-            ) : (
-              <>
-                <a
-                  className="primary-button install-link"
-                  href="https://www.freighter.app/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Install
-                  Freighter
-                </a>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={
+                handleConnectWallet
+              }
+              disabled={
+                connecting
+              }
+            >
+              {connecting
+                ? "Opening wallet selector..."
+                : "Connect Wallet"}
+            </button>
 
-                <button
-                  className="secondary-button"
-                  onClick={() =>
-                    window.location.reload()
-                  }
-                >
-                  I've installed it
-                  — Refresh
-                </button>
-              </>
-            )}
+            <span className="card-note">
+              Supported:{" "}
+              {SUPPORTED_WALLETS.join(
+                " / ",
+              )}
+            </span>
           </>
         )}
 
         {connectionError && (
-          <div className="connection-error">
+          <div
+            className="connection-error"
+            role="alert"
+            aria-live="polite"
+          >
             {connectionError}
           </div>
         )}
 
         <span className="card-note">
-          Your private keys never
-          leave your wallet.
+          Your private keys never leave
+          your wallet.
         </span>
       </section>
 
       <footer>
-        Built on Stellar ·
-        PromptRail Launchpad
+        Built on Stellar | PromptRail
+        Yellow Belt
       </footer>
     </main>
   );
