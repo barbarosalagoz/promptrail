@@ -13,6 +13,7 @@
     "@creit.tech/stellar-wallets-kit": "2.5.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "16.2.0",
+    "promptrail_registry": "file:packages/promptrail_registry",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
