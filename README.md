@@ -432,27 +432,45 @@ This avoids manually duplicating the Soroban contract interface in frontend code
 
 ### Multi-wallet Selection
 
-Expected file:
+PromptRail exposes only the explicitly enabled Stellar wallets: Freighter, Albedo and xBull.
 
-```text
-docs/screenshots/wallet-options.png
-```
+![PromptRail wallet options](./docs/screenshots/wallet-options.png)
+
+### Connected Wallet
+
+A Stellar wallet connected through Stellar Wallets Kit on Testnet.
+
+![PromptRail connected wallet](./docs/screenshots/wallet-connected.png)
+
+### Testnet Balance
+
+PromptRail reads the connected account's native XLM balance from Stellar Testnet.
+
+![PromptRail Testnet balance](./docs/screenshots/balance-testnet.png)
+
+### Successful XLM Payment
+
+A wallet-signed XLM payment successfully submitted and confirmed on Stellar Testnet.
+
+![PromptRail successful payment](./docs/screenshots/payment-success.png)
+
+### Payment Error Handling
+
+PromptRail surfaces failed transaction states instead of treating rejected or invalid transactions as successful.
+
+![PromptRail payment error handling](./docs/screenshots/payment-error.png)
 
 ### Wallet-signed Registry Write
 
-Expected file:
+A successful Soroban Registry write signed by the connected Stellar wallet and confirmed on Testnet.
 
-```text
-docs/screenshots/registry-write-success.png
-```
+![PromptRail Registry write success](./docs/screenshots/registry-write-success.png)
 
 ### Live Registry Events
 
-Expected file:
+Contract-filtered Stellar Testnet events synchronized into the PromptRail frontend.
 
-```text
-docs/screenshots/live-registry-events.png
-```
+![PromptRail live Registry activity](./docs/screenshots/live-registry-events.png)
 
 ---
 
@@ -473,8 +491,8 @@ docs/screenshots/live-registry-events.png
 - [x] Contract security tests
 - [x] Frontend dependency security review
 - [x] Rust dependency security review
+- [x] Final screenshots committed
 - [ ] Production Yellow Belt deployment
-- [ ] Final screenshots committed
 
 ---
 
