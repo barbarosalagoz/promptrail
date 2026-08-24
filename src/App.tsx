@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   isConnected,
   requestAccess,
+  getNetworkDetails,
 } from "@stellar/freighter-api";
 import "./App.css";
 
@@ -13,6 +14,8 @@ function App() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  const [network, setNetwork] = useState<string | null>(null);
 
   useEffect(() => {
     const checkFreighter = async () => {
@@ -35,12 +38,31 @@ function App() {
     checkFreighter();
   }, []);
 
+  const checkNetwork = async () => {
+    try {
+      const networkResult = await getNetworkDetails();
+
+      if (networkResult.error) {
+        throw new Error("Could not read the Freighter network.");
+      }
+
+      setNetwork(networkResult.network);
+
+      return networkResult.network;
+    } catch (error) {
+      console.error("Network check failed:", error);
+
+      setNetwork(null);
+
+      throw error;
+    }
+  };
+
   const connectWallet = async () => {
     try {
       setConnecting(true);
       setConnectionError(null);
 
-      // Freighter gerçekten erişilebilir mi tekrar kontrol ediyoruz.
       const connectionResult = await isConnected();
 
       if (!connectionResult.isConnected) {
@@ -51,7 +73,6 @@ function App() {
         );
       }
 
-      // Kullanıcıdan uygulamaya erişim izni ister.
       const accessResult = await requestAccess();
 
       if (accessResult.error) {
@@ -65,6 +86,14 @@ function App() {
       }
 
       setWalletAddress(accessResult.address);
+
+      const activeNetwork = await checkNetwork();
+
+      if (activeNetwork !== "TESTNET") {
+        setConnectionError(
+          `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
+        );
+      }
     } catch (error) {
       console.error("Wallet connection failed:", error);
 
@@ -78,6 +107,32 @@ function App() {
     }
   };
 
+  const disconnectWallet = () => {
+    setWalletAddress(null);
+    setNetwork(null);
+    setConnectionError(null);
+  };
+
+  const recheckNetwork = async () => {
+    try {
+      setConnectionError(null);
+
+      const activeNetwork = await checkNetwork();
+
+      if (activeNetwork !== "TESTNET") {
+        setConnectionError(
+          `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
+        );
+      }
+    } catch {
+      setConnectionError(
+        "Could not check the active Stellar network."
+      );
+    }
+  };
+
+  const isTestnet = network === "TESTNET";
+
   return (
     <main className="app">
       <header className="navbar">
@@ -90,9 +145,18 @@ function App() {
           </div>
         </div>
 
-        <div className="network-badge">
-          <span className="network-dot" />
-          TESTNET
+        <div
+          className={`network-badge ${
+            network && !isTestnet ? "network-badge-wrong" : ""
+          }`}
+        >
+          <span
+            className={`network-dot ${
+              network && !isTestnet ? "network-dot-wrong" : ""
+            }`}
+          />
+
+          {network ?? "TESTNET"}
         </div>
       </header>
 
@@ -138,6 +202,42 @@ function App() {
                 {walletAddress.slice(-10)}
               </strong>
             </div>
+
+            {network && (
+              <div
+                className={`network-panel ${
+                  isTestnet ? "network-panel-good" : "network-panel-wrong"
+                }`}
+              >
+                <span className="network-panel-label">
+                  ACTIVE NETWORK
+                </span>
+
+                <strong>
+                  {isTestnet ? "✓ Stellar Testnet" : `⚠ ${network}`}
+                </strong>
+
+                <span>
+                  {isTestnet
+                    ? "Ready for test transactions."
+                    : "Switch Freighter to Testnet before continuing."}
+                </span>
+              </div>
+            )}
+
+            <button
+              className="secondary-button"
+              onClick={recheckNetwork}
+            >
+              Recheck Network
+            </button>
+
+            <button
+              className="disconnect-button"
+              onClick={disconnectWallet}
+            >
+              Disconnect Wallet
+            </button>
           </>
         ) : (
           <>

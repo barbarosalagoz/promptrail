@@ -435,3 +435,78 @@ footer {
     display: none;
   }
 }
+
+.network-badge-wrong {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+
+.network-dot-wrong {
+  background: #f87171;
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.7);
+}
+
+.network-panel {
+  margin-top: 16px;
+  padding: 15px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  border-radius: 12px;
+
+  text-align: left;
+}
+
+.network-panel-good {
+  border: 1px solid rgba(72, 224, 164, 0.25);
+  background: rgba(72, 224, 164, 0.05);
+}
+
+.network-panel-wrong {
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  background: rgba(248, 113, 113, 0.05);
+}
+
+.network-panel-label {
+  color: #686e7c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.network-panel-good strong {
+  color: #6ee7b7;
+}
+
+.network-panel-wrong strong {
+  color: #fca5a5;
+}
+
+.network-panel span:last-child {
+  color: #858b99;
+  font-size: 12px;
+}
+
+.disconnect-button {
+  width: 100%;
+
+  margin-top: 10px;
+
+  padding: 12px 20px;
+
+  border: 0;
+
+  background: transparent;
+
+  color: #747987;
+
+  cursor: pointer;
+
+  font-size: 12px;
+}
+
+.disconnect-button:hover {
+  color: #fca5a5;
+}
