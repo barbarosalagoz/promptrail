@@ -1124,3 +1124,97 @@ footer {
     flex-wrap: wrap;
   }
 }
+
+/* MULTI-WALLET */
+
+.wallet-availability {
+  margin: 16px 0 0;
+  padding: 0;
+
+  list-style: none;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 8px;
+
+  text-align: left;
+}
+
+.wallet-availability li {
+  display: flex;
+
+  align-items: center;
+
+  gap: 8px;
+
+  padding: 8px 12px;
+
+  border: 1px solid #242836;
+  border-radius: 10px;
+
+  color: #b9bec9;
+
+  font-size: 12px;
+}
+
+.wallet-availability-dot {
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+
+  background: #4b5563;
+}
+
+.wallet-available .wallet-availability-dot {
+  background: #34d399;
+}
+
+.wallet-availability em {
+  margin-left: auto;
+
+  color: #6ee7b7;
+
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wallet-availability a {
+  margin-left: auto;
+
+  color: #a78bfa;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  text-decoration: none;
+}
+
+.wallet-availability a:hover {
+  color: #c4b5fd;
+}
+
+/* ERROR DETAILS */
+
+.connection-error strong {
+  display: block;
+
+  margin-bottom: 4px;
+}
+
+.connection-error p {
+  margin: 0;
+}
+
+.error-hint {
+  margin-top: 6px !important;
+
+  color: #8b90a0 !important;
+
+  font-size: 11px !important;
+}
