@@ -1038,23 +1038,23 @@ function App() {
         </span>
       </section>
 
-      {(walletAddress && isTestnet) || true ? (
+      {walletAddress && isTestnet && (
         <>
           <Services
             walletAddress={
-              walletAddress ?? "GAFA264FOUNCKK7K4LP2U2T3ETQTN2PGW5ONQUE4RC5QSBN6V6246V3I"
+              walletAddress
             }
             xlmBalance={xlmBalance}
           />
 
           <PaymentTracker
             walletAddress={
-              walletAddress ?? "GDMLL4EVSZHPFB3IES7XH72TNFITQ64G3S57SAHOE5L6LBZV4LPRZDJY"
+              walletAddress
             }
             xlmBalance={xlmBalance}
           />
         </>
-      ) : null}
+      )}
 
       <footer>
         Built on Stellar ·
