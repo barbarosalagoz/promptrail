@@ -17,8 +17,12 @@ import {
 
 import type { BatchRecipient, TrackedPayment } from "../contract/paymentTracker";
 
+import { AppError, classifyError, insufficientBalance } from "../errors";
+
 interface PaymentTrackerProps {
   walletAddress: string;
+  /** Spendable XLM balance, used to pre-check escrows before signing. */
+  xlmBalance: string | null;
 }
 
 interface RecipientRow {
@@ -47,7 +51,18 @@ function toMessage(error: unknown): string {
  * Reads the connected wallet's sent payments straight out of the deployed
  * Soroban contract, and drives create / complete / cancel through Freighter.
  */
-function PaymentTracker({ walletAddress }: PaymentTrackerProps) {
+/*
+ * Banner titles per error kind, mirroring the main card's treatment so the
+ * named error cases read distinctly here too.
+ */
+const ERROR_TITLES: Partial<Record<AppError["kind"], string>> = {
+  WALLET_NOT_FOUND: "Wallet not found",
+  USER_REJECTED: "Request declined in wallet",
+  INSUFFICIENT_BALANCE: "Insufficient balance",
+  WRONG_NETWORK: "Wrong network",
+};
+
+function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
   const [payments, setPayments] = useState<TrackedPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,7 +73,7 @@ function PaymentTracker({ walletAddress }: PaymentTrackerProps) {
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<AppError | null>(null);
   const [actionHash, setActionHash] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -176,8 +191,27 @@ function PaymentTracker({ walletAddress }: PaymentTrackerProps) {
 
     try {
       recipients = parseRows();
+
+      /*
+       * Insufficient balance is pre-checked before any signing prompt; the
+       * on-chain SAC balance error maps to the same typed error if the
+       * balance changes underneath us.
+       */
+      if (xlmBalance) {
+        const total = recipients.reduce(
+          (sum, recipient) => sum + recipient.amount,
+          0n
+        );
+        const spendable = xlmToStroops(xlmBalance);
+
+        if (total >= spendable) {
+          throw insufficientBalance(
+            `Escrowing ${stroopsToXlm(total)} XLM exceeds your spendable balance of ${xlmBalance} XLM.`
+          );
+        }
+      }
     } catch (error) {
-      setActionError(toMessage(error));
+      setActionError(classifyError(error));
       return;
     }
 
@@ -205,7 +239,7 @@ function PaymentTracker({ walletAddress }: PaymentTrackerProps) {
       setRows(batchMode ? [emptyRow(), emptyRow()] : [emptyRow()]);
       await refresh();
     } catch (error) {
-      setActionError(toMessage(error));
+      setActionError(classifyError(error));
     } finally {
       setSubmitting(false);
     }
@@ -231,7 +265,7 @@ function PaymentTracker({ walletAddress }: PaymentTrackerProps) {
 
       await refresh();
     } catch (error) {
-      setActionError(toMessage(error));
+      setActionError(classifyError(error));
     } finally {
       setBusyId(null);
     }
@@ -359,8 +393,14 @@ function PaymentTracker({ walletAddress }: PaymentTrackerProps) {
           <span className="result-icon">✕</span>
 
           <div>
-            <strong>Could not complete that action</strong>
-            <p>{actionError}</p>
+            <strong>
+              {ERROR_TITLES[actionError.kind] ??
+                "Could not complete that action"}
+            </strong>
+            <p>{actionError.message}</p>
+            {actionError.hint && (
+              <p className="error-hint">{actionError.hint}</p>
+            )}
           </div>
         </div>
       )}

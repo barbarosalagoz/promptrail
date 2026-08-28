@@ -1038,7 +1038,12 @@ function App() {
       </section>
 
       {walletAddress && isTestnet && (
-        <PaymentTracker walletAddress={walletAddress} />
+        <PaymentTracker
+          walletAddress={
+            walletAddress
+          }
+          xlmBalance={xlmBalance}
+        />
       )}
 
       <footer>

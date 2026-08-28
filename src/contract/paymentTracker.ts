@@ -18,7 +18,9 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 
-import { signTransaction } from "@stellar/freighter-api";
+import { signWithWallet } from "../services/wallet";
+
+import { AppError, classifyError } from "../errors";
 
 /** Deployed on Stellar Testnet. See the Smart Contract section of the README. */
 export const PAYMENT_TRACKER_ID =
@@ -59,30 +61,12 @@ export interface BatchRecipient {
 }
 
 /*
- * Contract error codes, mirrored from contracts/payment-tracker/src/lib.rs.
- * Simulation failures surface as "Error(Contract, #N)"; map N back to
- * something a person can read.
+ * All raw failures (simulation, signing, submission) flow through the shared
+ * taxonomy in src/errors.ts, which also decodes "Error(Contract, #N)" codes
+ * and maps balance failures to INSUFFICIENT_BALANCE.
  */
-const CONTRACT_ERRORS: Record<number, string> = {
-  1: "The contract has already been initialized.",
-  2: "The contract has no settlement token configured.",
-  3: "Amount must be greater than zero.",
-  4: "No payment exists with that id.",
-  5: "That payment is already completed or cancelled.",
-  6: "Add at least one recipient.",
-  7: "Too many recipients in a single batch (max 100).",
-  8: "Sender and recipient cannot be the same address.",
-};
-
-function describeContractError(raw: string): string {
-  const match = raw.match(/Error\(Contract,\s*#(\d+)\)/);
-
-  if (match) {
-    const code = Number(match[1]);
-    return CONTRACT_ERRORS[code] ?? `Contract rejected the call (error #${code}).`;
-  }
-
-  return raw;
+function describeContractError(raw: string): AppError {
+  return classifyError(new Error(raw));
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,7 +169,7 @@ async function simulateView<T>(
   );
 
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(describeContractError(simulation.error));
+    throw describeContractError(simulation.error);
   }
 
   if (!simulation.result?.retval) {
@@ -222,29 +206,20 @@ async function invoke<T>(
       buildInvocation(account, method, args)
     );
   } catch (error) {
-    throw new Error(
-      describeContractError(
-        error instanceof Error ? error.message : String(error)
-      ),
-      { cause: error }
-    );
+    throw classifyError(error);
   }
 
-  const signed = await signTransaction(prepared.toEnvelope().toXdr("base64"), {
-    networkPassphrase: Networks.TESTNET,
-    address: sourceAddress,
-  });
-
-  if (signed.error) {
-    throw new Error(signed.error.message ?? "Freighter rejected the request.");
-  }
-
-  if (!signed.signedTxXdr) {
-    throw new Error("Freighter did not return a signed transaction.");
-  }
+  /*
+   * Sign with whichever wallet the kit has connected (Freighter, Albedo,
+   * xBull). A decline surfaces as a typed USER_REJECTED error.
+   */
+  const signedXdr = await signWithWallet(
+    prepared.toEnvelope().toXdr("base64"),
+    sourceAddress
+  );
 
   const sent = await server.sendTransaction(
-    TransactionBuilder.fromXdr(signed.signedTxXdr, Networks.TESTNET)
+    TransactionBuilder.fromXdr(signedXdr, Networks.TESTNET)
   );
 
   if (sent.status === "ERROR") {
