@@ -32,7 +32,10 @@ export function usePollingData<T>(
 
   // Keep the latest fetcher without retriggering the polling effect.
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
 
   const load = useCallback(async (isActive: () => boolean) => {
     try {
