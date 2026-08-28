@@ -293,7 +293,7 @@ impl PaymentTracker {
 
         // Pull the funds in before recording anything, so a failed transfer
         // leaves no orphaned payment behind.
-        token::Client::new(env, token).transfer(from, &env.current_contract_address(), &amount);
+        token::Client::new(env, token).transfer(from, env.current_contract_address(), &amount);
 
         let id: u32 = env
             .storage()
