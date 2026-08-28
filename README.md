@@ -68,7 +68,29 @@ payment is in flight and tracks its status on-chain.
 | **Source** | [contracts/payment-tracker/src/lib.rs](contracts/payment-tracker/src/lib.rs) |
 | **Tests** | [contracts/payment-tracker/src/test.rs](contracts/payment-tracker/src/test.rs) |
 
-**Explorer:** [View on stellar.expert](https://stellar.expert/explorer/testnet/contract/CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X)
+### Verify the deployment
+
+* **stellar.expert** — [contract page](https://stellar.expert/explorer/testnet/contract/CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X)
+* **Stellar Lab** — [contract page](https://lab.stellar.org/r/testnet/contract/CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X)
+* **stellarchain.io** — [contract page](https://testnet.stellarchain.io/contracts/CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X)
+
+Third-party Testnet indexers can lag behind the ledger by a while, so the
+authoritative checks are Horizon and the contract's own interface, both of which
+respond immediately:
+
+* [All deployer transactions on Horizon](https://horizon-testnet.stellar.org/accounts/GDMLL4EVSZHPFB3IES7XH72TNFITQ64G3S57SAHOE5L6LBZV4LPRZDJY/transactions?order=desc)
+
+Read the deployed contract's interface straight off the ledger:
+
+```bash
+stellar contract info interface --id CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X --network testnet
+```
+
+Query its live state without a wallet:
+
+```bash
+stellar contract invoke --id CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X --source deployer --network testnet -- get_payment_count
+```
 
 ### How the escrow works
 
@@ -142,8 +164,15 @@ Every function below was invoked against the deployed contract on Testnet:
 | `complete_payment` (id 1) | [`4dcfe1bf…`](https://stellar.expert/explorer/testnet/tx/4dcfe1bfec29b8b8eca1d4276a5cf906b0a53084eda6b0d421408c025c78cd88) |
 | `cancel_payment` (id 2) | [`50664433…`](https://stellar.expert/explorer/testnet/tx/50664433fb25b97965f0b4c2ac9c3c5957cf0a8cd07bb81958d750088b6a17d2) |
 
+Every one of those transactions is confirmed successful on Horizon — for
+example, the `create_payment` above landed in ledger 4380292:
+
+```bash
+curl https://horizon-testnet.stellar.org/transactions/875ccf85104e3368f568615e327ea4d3d9601e64c9f46e99765c6f8030538313
+```
+
 Re-completing payment `0` on the live contract correctly fails with
-`Error(Contract, #5)` (`NotPending`).
+`Error(Contract, #5)` (`NotPending`), and `get_payment_count` returns `3`.
 
 ### Frontend integration
 
