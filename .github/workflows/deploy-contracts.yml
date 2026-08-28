@@ -1,0 +1,68 @@
+name: Deploy Contracts (manual)
+
+# Builds the contract wasm and documents the exact deploy + initialize
+# sequence. No secret keys live in CI: the built artifacts are attached to
+# the run, and the printed commands are executed locally by a human with
+# `scripts/deploy.sh` (which signs with a local stellar identity).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-wasm:
+    name: Build deployable wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-wasm-${{ runner.os }}-
+
+      - name: Install Stellar CLI
+        run: |
+          curl -sSL https://github.com/stellar/stellar-cli/releases/download/v27.1.0/stellar-cli-27.1.0-x86_64-unknown-linux-gnu.tar.gz -o stellar-cli.tar.gz || true
+          if [ -s stellar-cli.tar.gz ]; then
+            tar -xzf stellar-cli.tar.gz && sudo mv stellar /usr/local/bin/
+          else
+            cargo install --locked stellar-cli
+          fi
+          stellar --version
+
+      - name: Build contracts
+        run: stellar contract build
+
+      - name: Verify tests still pass
+        run: cargo test
+
+      - name: Upload wasm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasm
+          path: target/wasm32v1-none/release/*.wasm
+          if-no-files-found: error
+
+      - name: Print deploy instructions
+        run: |
+          echo "## Deploy from your machine (signed locally, never in CI)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "# One-shot, idempotent:" >> "$GITHUB_STEP_SUMMARY"
+          echo "./scripts/deploy.sh" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "# Or manually:" >> "$GITHUB_STEP_SUMMARY"
+          echo "stellar contract deploy --wasm target/wasm32v1-none/release/service_registry.wasm --source deployer --network testnet --alias service-registry" >> "$GITHUB_STEP_SUMMARY"
+          echo "stellar contract deploy --wasm target/wasm32v1-none/release/payment_router.wasm --source deployer --network testnet --alias payment-router" >> "$GITHUB_STEP_SUMMARY"
+          echo "stellar contract invoke --id <ROUTER_ID> --source deployer --network testnet -- initialize --token \$(stellar contract id asset --asset native --network testnet) --registry_address <REGISTRY_ID>" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
