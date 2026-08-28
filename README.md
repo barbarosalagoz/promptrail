@@ -1,8 +1,13 @@
 # PromptRail
 
+[![CI](https://github.com/barbarosalagoz/promptrail/actions/workflows/ci.yml/badge.svg)](https://github.com/barbarosalagoz/promptrail/actions/workflows/ci.yml)
+
 **Machine Payments on Stellar**
 
-PromptRail is a Stellar Testnet dApp built for the **Stellar Journey to Mastery — Yellow Belt Challenge**.
+PromptRail is a Stellar Testnet dApp built through the **Stellar Journey to
+Mastery** program — currently at the **Orange Belt** level (advanced smart
+contracts + production-ready dApps), on top of the completed Yellow Belt
+foundation documented further below.
 
 It pairs a **deployed Soroban smart contract** with a React frontend that drives it end to end.
 
@@ -56,7 +61,189 @@ Verified production flow:
 
 ---
 
-## Smart Contract (Soroban)
+## Orange Belt — Inter-Contract Payments
+
+The Orange Belt level adds a second pair of contracts that **talk to each
+other on-chain**: services register in a catalog contract, and payments
+resolve against that catalog with a real cross-contract invocation.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph Frontend["React dApp (StellarWalletsKit)"]
+        UI["Services UI<br/>browse · register · pay"]
+        FEED["Activity feed<br/>RPC getEvents, 8s polling"]
+    end
+
+    subgraph Chain["Stellar Testnet (Soroban)"]
+        ROUTER["payment-router<br/><i>pay_for_service</i>"]
+        REGISTRY["service-registry<br/><i>register / update / deactivate</i>"]
+        SAC["Native XLM SAC"]
+    end
+
+    UI -- "sign + submit" --> ROUTER
+    UI -- "register_service" --> REGISTRY
+    ROUTER == "cross-contract call<br/>get_active_service(id)" ==> REGISTRY
+    ROUTER -- "transfer(payer → payout)" --> SAC
+    ROUTER -. "ServicePaid event" .-> FEED
+    REGISTRY -. "ServiceRegistered / Updated / Deactivated" .-> FEED
+```
+
+`pay_for_service` is one on-chain invocation that (1) cross-calls the
+registry's `get_active_service` through its generated contract client — a
+workspace dependency, not a frontend-orchestrated pair of calls — (2) moves
+`price` XLM from the payer straight to the provider's payout address, and
+(3) records a receipt and emits a `service_paid` event. Missing or
+deactivated services surface as typed `contracterror`s translated across the
+contract boundary.
+
+### Deployed contracts (Testnet)
+
+| Contract | Testnet ID |
+| --- | --- |
+| service-registry | `CDPCOA6EGW5KN2TFOUZ2KS5ONSM3H44ZCMHTPBPM43VMJ5PTGWJ7JJSX` |
+| payment-router | `CCQXYM6U5TVKWXI6HKEIQFBYYA7PHRDPMCZFV2NGRN4NRGQ2ELZP5YCX` |
+| Settlement token (native XLM SAC) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+
+Explorer: [service-registry](https://stellar.expert/explorer/testnet/contract/CDPCOA6EGW5KN2TFOUZ2KS5ONSM3H44ZCMHTPBPM43VMJ5PTGWJ7JJSX) · [payment-router](https://stellar.expert/explorer/testnet/contract/CCQXYM6U5TVKWXI6HKEIQFBYYA7PHRDPMCZFV2NGRN4NRGQ2ELZP5YCX)
+
+Sources: [contracts/service-registry/src/lib.rs](contracts/service-registry/src/lib.rs) · [contracts/payment-router/src/lib.rs](contracts/payment-router/src/lib.rs)
+
+### Proof of cross-contract invocation
+
+A real `pay_for_service` on Testnet — the router resolved service `#0`
+("Translation API", 5 XLM) from the registry via cross-call and routed the
+payment from the payer to the provider's payout address in the same
+transaction:
+
+```text
+Transaction hash:
+04053f6f86d31c2a6ff98081fbc44bd8cf1eb9f8631b3bb64167a1e0243177b6
+```
+
+* [View on stellar.expert](https://stellar.expert/explorer/testnet/tx/04053f6f86d31c2a6ff98081fbc44bd8cf1eb9f8631b3bb64167a1e0243177b6)
+* [View on Horizon (always live)](https://horizon-testnet.stellar.org/transactions/04053f6f86d31c2a6ff98081fbc44bd8cf1eb9f8631b3bb64167a1e0243177b6)
+
+A second routed payment (service `#2`, 2.5 XLM):
+[`bdaf1613…`](https://stellar.expert/explorer/testnet/tx/bdaf16134aedad1966a515769014058087b814482e4676d84a025ee47bb5400b)
+([Horizon](https://horizon-testnet.stellar.org/transactions/bdaf16134aedad1966a515769014058087b814482e4676d84a025ee47bb5400b)).
+
+Live demo services on the registry: `#0 Translation API — 5 XLM`,
+`#1 Image Generation API — 10 XLM`, `#2 LLM Inference — 2.5 XLM`.
+
+### Registry interface
+
+| Function | Kind | Description |
+| --- | --- | --- |
+| `register_service(provider, name, price, payout_address) -> u32` | write | Provider-authorized listing; returns the new service id. |
+| `update_service(id, name, price, payout_address)` | write | Provider only. |
+| `deactivate_service(id)` | write | Provider only; deactivated services cannot be paid for. |
+| `get_service(id)` / `get_active_service(id)` | read | The latter is the router's cross-call entry point. |
+| `get_service_count()` / `list_active(offset, limit)` | read | Pagination over the active catalog. |
+
+### Router interface
+
+| Function | Kind | Description |
+| --- | --- | --- |
+| `initialize(token, registry_address)` | write | Wires the settlement token and the registry. Once only. |
+| `pay_for_service(payer, service_id) -> u32` | write | The cross-contract payment; returns the receipt id. |
+| `get_receipt(id)` / `get_receipt_count()` / `get_payer_receipts(payer)` | read | Receipt lookups for the UI. |
+
+### Testing
+
+`cargo test` runs **36 contract tests**: 12 registry (ported from the earlier
+registry suite and extended), 13 tracker, and 11 router — 6 of which are
+**integration tests** registering the router and registry together in one env
+so `pay_for_service` exercises the real cross-contract path (happy path with
+balance + event assertions, inactive service, unknown service, missing payer
+auth, insufficient balance, live price updates).
+
+`npm test` runs **18 frontend tests** (Vitest + React Testing Library):
+the error-taxonomy mapping matrix, Services list states
+(loading → data → empty → error), and the transaction status indicator.
+
+![Contract and frontend test output](docs/screenshots/test-output.png)
+
+### CI/CD
+
+* **[CI](.github/workflows/ci.yml)** — on every push and PR: contracts job
+  (`cargo fmt --check`, `clippy -D warnings`, `cargo test`) and frontend job
+  (`npm ci`, `lint`, `test`, `build`), with cargo + npm caching.
+* **[Deploy workflow](.github/workflows/deploy-contracts.yml)** — manually
+  triggered: builds the wasm with the pinned Stellar CLI, attaches the
+  artifacts, and prints the exact deploy commands. **No secret keys in CI** —
+  signing happens locally via [`scripts/deploy.sh`](scripts/deploy.sh), an
+  idempotent script that deploys both contracts, initializes the router, and
+  echoes ready-to-paste README + .env blocks.
+
+![CI pipeline run](docs/screenshots/ci-pipeline.png)
+
+### Frontend
+
+* **Services marketplace**: browse the live registry catalog, pay through
+  the router with the connected wallet, offer services as a provider, and
+  watch receipts update live.
+* **Event streaming**: the activity feed merges both contracts' events
+  (`service_registered` / `service_updated` / `service_deactivated` /
+  `service_paid`) from Soroban RPC into human-readable lines with explorer
+  links, refreshed every 8 seconds alongside the payment lists.
+* **Mobile responsive**: audited at 375px and 768px — stacked layouts, no
+  horizontal scroll.
+* **Loading & error states**: skeletons for every async region, empty
+  states, and all failures routed through the
+  [error taxonomy](src/errors.ts) (now contract-aware: the same
+  `Error(Contract, #N)` decodes through the right contract's error enum).
+
+![Mobile UI](docs/screenshots/mobile-ui.png)
+
+### Demo video
+
+▶ **Demo video link goes here** (1–2 minutes); the timed recording script
+lives in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+
+---
+
+## Contributing & Development Guide
+
+**Repo layout**
+
+```text
+contracts/            Soroban workspace members
+  service-registry/     on-chain service catalog (Orange Belt)
+  payment-router/       cross-contract payments (Orange Belt)
+  payment-tracker/      escrow tracker (Yellow Belt)
+src/
+  config.ts             env-driven configuration (see .env.example)
+  errors.ts             user-facing error taxonomy
+  services/             chain access: wallet kit, Soroban transport, amounts
+  contract/             typed clients for the three deployed contracts
+  hooks/                polling data hooks (services, receipts, activity)
+  components/           UI panels and shared pieces
+scripts/deploy.sh     idempotent testnet deploy + initialize
+.github/workflows/    CI and manual deploy pipeline
+```
+
+**Run everything**
+
+```bash
+cargo test        # 36 contract tests (unit + cross-contract integration)
+npm test          # 18 frontend tests (Vitest + RTL)
+npm run lint      # ESLint
+npm run build     # production build
+```
+
+**Deploy your own instance**
+
+```bash
+./scripts/deploy.sh            # deploys + initializes on Testnet, prints IDs
+cp .env.example .env           # then paste the printed VITE_* values
+npm run dev
+```
+
+---
+
+## Yellow Belt — Payment Tracker (Soroban)
 
 PromptRail's settlement layer is a Soroban contract that escrows XLM while a
 payment is in flight and tracks its status on-chain.

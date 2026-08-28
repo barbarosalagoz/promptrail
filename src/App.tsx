@@ -29,6 +29,7 @@ import {
 } from "./errors";
 
 import PaymentTracker from "./components/PaymentTracker";
+import Services from "./components/Services";
 
 import "./App.css";
 
@@ -1038,12 +1039,21 @@ function App() {
       </section>
 
       {walletAddress && isTestnet && (
-        <PaymentTracker
-          walletAddress={
-            walletAddress
-          }
-          xlmBalance={xlmBalance}
-        />
+        <>
+          <Services
+            walletAddress={
+              walletAddress
+            }
+            xlmBalance={xlmBalance}
+          />
+
+          <PaymentTracker
+            walletAddress={
+              walletAddress
+            }
+            xlmBalance={xlmBalance}
+          />
+        </>
       )}
 
       <footer>

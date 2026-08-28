@@ -1,0 +1,18 @@
+[package]
+name = "payment-router"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "PromptRail Payment Router - pays for registry services via cross-contract calls"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+service-registry = { path = "../service-registry" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
