@@ -2,13 +2,6 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
-  isConnected,
-  requestAccess,
-  getNetworkDetails,
-  signTransaction,
-} from "@stellar/freighter-api";
-
-import {
   Horizon,
   Asset,
   BASE_FEE,
@@ -19,15 +12,51 @@ import {
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
 
+import {
+  connectWallet as kitConnect,
+  disconnectWallet as kitDisconnect,
+  getWalletNetwork,
+  getWalletOptions,
+  signWithWallet,
+} from "./services/wallet";
+import type { WalletOption } from "./services/wallet";
+
+import {
+  AppError,
+  classifyError,
+  classifyHorizonError,
+  insufficientBalance,
+} from "./errors";
+
+import PaymentTracker from "./components/PaymentTracker";
+
 import "./App.css";
 
 const horizonServer = new Horizon.Server(
   "https://horizon-testnet.stellar.org"
 );
 
+/*
+ * Banner titles per error kind, so the three review-relevant cases —
+ * wallet not found, user rejected, insufficient balance — read
+ * distinctly in the UI.
+ */
+const ERROR_TITLES: Partial<
+  Record<AppError["kind"], string>
+> = {
+  WALLET_NOT_FOUND:
+    "Wallet not found",
+  USER_REJECTED:
+    "Request declined in wallet",
+  INSUFFICIENT_BALANCE:
+    "Insufficient balance",
+  WRONG_NETWORK:
+    "Wrong network",
+};
+
 function App() {
-  const [freighterInstalled, setFreighterInstalled] =
-    useState<boolean | null>(null);
+  const [walletOptions, setWalletOptions] =
+    useState<WalletOption[] | null>(null);
 
   const [walletAddress, setWalletAddress] =
     useState<string | null>(null);
@@ -36,7 +65,7 @@ function App() {
     useState(false);
 
   const [connectionError, setConnectionError] =
-    useState<string | null>(null);
+    useState<AppError | null>(null);
 
   const [network, setNetwork] =
     useState<string | null>(null);
@@ -60,61 +89,58 @@ function App() {
     useState(false);
 
   const [transactionError, setTransactionError] =
-    useState<string | null>(null);
+    useState<AppError | null>(null);
 
   const [transactionHash, setTransactionHash] =
     useState<string | null>(null);
 
   /*
-   * Detect Freighter
+   * Discover which wallets the kit can offer in this browser, so the UI can
+   * show availability and install guidance before a connect attempt.
    */
   useEffect(() => {
-    const checkFreighter = async () => {
-      try {
-        const result = await isConnected();
+    let active = true;
 
-        if (result.error) {
-          console.error(
-            "Freighter check error:",
-            result.error
-          );
-
-          setFreighterInstalled(false);
-          return;
+    getWalletOptions()
+      .then((options) => {
+        if (active) {
+          setWalletOptions(options);
         }
-
-        setFreighterInstalled(
-          result.isConnected
-        );
-      } catch (error) {
+      })
+      .catch((error) => {
         console.error(
-          "Freighter detection failed:",
+          "Wallet discovery failed:",
           error
         );
 
-        setFreighterInstalled(false);
-      }
-    };
+        if (active) {
+          setWalletOptions([]);
+        }
+      });
 
-    checkFreighter();
+    return () => {
+      active = false;
+    };
   }, []);
 
   /*
-   * Read active Freighter network
+   * Read the connected wallet's active network through the kit. Returns
+   * "TESTNET" when the passphrase matches, else the wallet's own label.
    */
   const checkNetwork = async () => {
-    const networkResult =
-      await getNetworkDetails();
+    const details =
+      await getWalletNetwork();
 
-    if (networkResult.error) {
-      throw new Error(
-        "Could not read the Freighter network."
-      );
-    }
+    const label =
+      details.networkPassphrase ===
+      Networks.TESTNET
+        ? "TESTNET"
+        : details.network ||
+          "UNKNOWN";
 
-    setNetwork(networkResult.network);
+    setNetwork(label);
 
-    return networkResult.network;
+    return label;
   };
 
   /*
@@ -179,7 +205,9 @@ function App() {
   };
 
   /*
-   * Connect Freighter
+   * Connect through the kit's wallet-selection modal (Freighter, Albedo,
+   * xBull). The service enforces Testnet and raises typed AppErrors, so
+   * wallet-not-found and user-rejected surface as distinct messages.
    */
   const connectWallet = async () => {
     try {
@@ -188,55 +216,23 @@ function App() {
       setConnectionError(null);
       setBalanceError(null);
 
-      const connectionResult =
-        await isConnected();
+      const connected =
+        await kitConnect();
 
-      if (
-        !connectionResult.isConnected
-      ) {
-        setFreighterInstalled(false);
+      setWalletAddress(
+        connected.address
+      );
 
-        throw new Error(
-          "Freighter could not be detected. Please unlock Freighter and refresh the page."
-        );
-      }
+      setNetwork(
+        connected.networkPassphrase ===
+          Networks.TESTNET
+          ? "TESTNET"
+          : connected.network
+      );
 
-      const accessResult =
-        await requestAccess();
-
-      if (accessResult.error) {
-        throw new Error(
-          accessResult.error.message
-        );
-      }
-
-      if (!accessResult.address) {
-        throw new Error(
-          "Freighter did not return a wallet address."
-        );
-      }
-
-      const address =
-        accessResult.address;
-
-      setWalletAddress(address);
-
-      const activeNetwork =
-        await checkNetwork();
-
-      if (
-        activeNetwork !== "TESTNET"
-      ) {
-        setXlmBalance(null);
-
-        setConnectionError(
-          `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
-        );
-
-        return;
-      }
-
-      await fetchBalance(address);
+      await fetchBalance(
+        connected.address
+      );
     } catch (error) {
       console.error(
         "Wallet connection failed:",
@@ -244,9 +240,7 @@ function App() {
       );
 
       setConnectionError(
-        error instanceof Error
-          ? error.message
-          : "Could not connect to Freighter."
+        classifyError(error)
       );
     } finally {
       setConnecting(false);
@@ -257,6 +251,8 @@ function App() {
    * Disconnect from PromptRail UI
    */
   const disconnectWallet = () => {
+    void kitDisconnect();
+
     setWalletAddress(null);
     setNetwork(null);
     setXlmBalance(null);
@@ -288,7 +284,11 @@ function App() {
         setXlmBalance(null);
 
         setConnectionError(
-          `PromptRail requires Stellar Testnet. Your Freighter wallet is currently using ${activeNetwork}. Please switch Freighter to Testnet.`
+          new AppError(
+            "WRONG_NETWORK",
+            `PromptRail requires Stellar Testnet. Your wallet is currently on ${activeNetwork}.`,
+            "Switch the wallet to Testnet, then press Recheck Network."
+          )
         );
 
         return;
@@ -299,9 +299,9 @@ function App() {
           walletAddress
         );
       }
-    } catch {
+    } catch (error) {
       setConnectionError(
-        "Could not check the active Stellar network."
+        classifyError(error)
       );
     }
   };
@@ -349,8 +349,9 @@ function App() {
       if (
         activeNetwork !== "TESTNET"
       ) {
-        throw new Error(
-          "Switch Freighter to Stellar Testnet before sending XLM."
+        throw new AppError(
+          "WRONG_NETWORK",
+          "Switch your wallet to Stellar Testnet before sending XLM."
         );
       }
 
@@ -409,13 +410,18 @@ function App() {
         );
       }
 
+      /*
+       * Insufficient balance is pre-checked here, before any signing prompt.
+       * If it slips through anyway, the Horizon result code maps to the same
+       * typed error in the catch below.
+       */
       if (
         xlmBalance &&
         numericAmount >=
           Number(xlmBalance)
       ) {
-        throw new Error(
-          "The payment amount is too high for this wallet balance."
+        throw insufficientBalance(
+          `This payment (${numericAmount} XLM) exceeds your spendable balance of ${xlmBalance} XLM.`
         );
       }
 
@@ -472,7 +478,7 @@ function App() {
           )
           .addMemo(
             Memo.text(
-              "PromptRail White Belt"
+              "PromptRail Yellow Belt"
             )
           )
           .setTimeout(30)
@@ -489,33 +495,14 @@ function App() {
         transaction.toEnvelope().toXdr("base64");
 
       /*
-       * 8. Ask Freighter to sign
+       * 8. Ask the connected wallet to sign (any kit wallet: Freighter,
+       * Albedo, xBull). A decline raises a typed USER_REJECTED error.
        */
-      const signResult =
-        await signTransaction(
+      const signedXdr =
+        await signWithWallet(
           unsignedXdr,
-          {
-            networkPassphrase:
-              Networks.TESTNET,
-
-            address:
-              walletAddress,
-          }
+          walletAddress
         );
-
-      if (signResult.error) {
-        throw new Error(
-          signResult.error.message
-        );
-      }
-
-      if (
-        !signResult.signedTxXdr
-      ) {
-        throw new Error(
-          "Freighter did not return a signed transaction."
-        );
-      }
 
       /*
        * 9. Convert signed XDR back
@@ -527,7 +514,7 @@ function App() {
        */
       const signedTransaction =
         TransactionBuilder.fromXdr(
-          signResult.signedTxXdr,
+          signedXdr,
           Networks.TESTNET
         );
 
@@ -557,47 +544,13 @@ function App() {
         error
       );
 
-      const horizonError =
-        error as {
-          response?: {
-            data?: {
-              extras?: {
-                result_codes?: {
-                  transaction?: string;
-                  operations?: string[];
-                };
-              };
-            };
-          };
-        };
-
-      const resultCodes =
-        horizonError.response
-          ?.data?.extras
-          ?.result_codes;
-
-      if (resultCodes) {
-        const operationCode =
-          resultCodes.operations?.join(
-            ", "
-          );
-
-        setTransactionError(
-          operationCode
-            ? `Stellar rejected the transaction: ${operationCode}`
-            : `Stellar rejected the transaction: ${
-                resultCodes.transaction ??
-                "unknown error"
-              }`
-        );
-
-        return;
-      }
-
+      /*
+       * classifyHorizonError maps op_underfunded and
+       * tx_insufficient_balance/fee to INSUFFICIENT_BALANCE, wallet declines
+       * to USER_REJECTED, and everything else to a readable message.
+       */
       setTransactionError(
-        error instanceof Error
-          ? error.message
-          : "The transaction could not be completed."
+        classifyHorizonError(error)
       );
     } finally {
       setSending(false);
@@ -645,7 +598,7 @@ function App() {
 
       <section className="hero">
         <div className="eyebrow">
-          STELLAR WHITE BELT
+          STELLAR YELLOW BELT
         </div>
 
         <h2>
@@ -674,7 +627,7 @@ function App() {
             </h3>
 
             <p>
-              Your Freighter wallet
+              Your Stellar wallet
               is connected to
               PromptRail.
             </p>
@@ -788,7 +741,7 @@ function App() {
                 <span>
                   {isTestnet
                     ? "Ready for test transactions."
-                    : "Switch Freighter to Testnet before continuing."}
+                    : "Switch your wallet to Testnet before continuing."}
                 </span>
               </div>
             )}
@@ -880,7 +833,7 @@ function App() {
                     }
                   >
                     {sending
-                      ? "Waiting for Freighter..."
+                      ? "Waiting for your wallet..."
                       : "Send XLM"}
                   </button>
                 </form>
@@ -894,14 +847,26 @@ function App() {
 
                 <div>
                   <strong>
-                    Transaction failed
+                    {ERROR_TITLES[
+                      transactionError
+                        .kind
+                    ] ??
+                      "Transaction failed"}
                   </strong>
 
                   <p>
                     {
-                      transactionError
+                      transactionError.message
                     }
                   </p>
+
+                  {transactionError.hint && (
+                    <p className="error-hint">
+                      {
+                        transactionError.hint
+                      }
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -974,63 +939,95 @@ function App() {
             </h3>
 
             <p>
-              Connect Freighter to
-              access your Stellar
-              Testnet account.
+              Pick a Stellar wallet
+              — Freighter, Albedo,
+              or xBull — to access
+              your Testnet account.
             </p>
 
-            {freighterInstalled ===
-            null ? (
-              <button
-                className="primary-button"
-                disabled
-              >
-                Checking
-                Freighter...
-              </button>
-            ) : freighterInstalled ? (
-              <button
-                className="primary-button"
-                onClick={
-                  connectWallet
-                }
-                disabled={
-                  connecting
-                }
-              >
-                {connecting
+            <button
+              className="primary-button"
+              onClick={
+                connectWallet
+              }
+              disabled={
+                connecting ||
+                walletOptions ===
+                  null
+              }
+            >
+              {walletOptions ===
+              null
+                ? "Detecting wallets..."
+                : connecting
                   ? "Connecting..."
-                  : "Connect Freighter"}
-              </button>
-            ) : (
-              <>
-                <a
-                  className="primary-button install-link"
-                  href="https://www.freighter.app/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Install
-                  Freighter
-                </a>
+                  : "Connect Wallet"}
+            </button>
 
-                <button
-                  className="secondary-button"
-                  onClick={() =>
-                    window.location.reload()
-                  }
-                >
-                  I've installed it
-                  — Refresh
-                </button>
-              </>
+            {walletOptions && (
+              <ul className="wallet-availability">
+                {walletOptions.map(
+                  (option) => (
+                    <li
+                      key={
+                        option.id
+                      }
+                      className={
+                        option.available
+                          ? "wallet-available"
+                          : "wallet-missing"
+                      }
+                    >
+                      <span className="wallet-availability-dot" />
+
+                      {option.name}
+
+                      {option.available ? (
+                        <em>
+                          detected
+                        </em>
+                      ) : (
+                        <a
+                          href={
+                            option.url
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          install ↗
+                        </a>
+                      )}
+                    </li>
+                  )
+                )}
+              </ul>
             )}
           </>
         )}
 
         {connectionError && (
           <div className="connection-error">
-            {connectionError}
+            <strong>
+              {ERROR_TITLES[
+                connectionError
+                  .kind
+              ] ??
+                "Connection failed"}
+            </strong>
+
+            <p>
+              {
+                connectionError.message
+              }
+            </p>
+
+            {connectionError.hint && (
+              <p className="error-hint">
+                {
+                  connectionError.hint
+                }
+              </p>
+            )}
           </div>
         )}
 
@@ -1039,6 +1036,15 @@ function App() {
           leave your wallet.
         </span>
       </section>
+
+      {walletAddress && isTestnet && (
+        <PaymentTracker
+          walletAddress={
+            walletAddress
+          }
+          xlmBalance={xlmBalance}
+        />
+      )}
 
       <footer>
         Built on Stellar ·
