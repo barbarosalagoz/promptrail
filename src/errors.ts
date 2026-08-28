@@ -107,19 +107,42 @@ const UNDERFUNDED_PATTERNS = [
 ];
 
 /*
- * Soroban contract error codes, mirrored from
- * contracts/payment-tracker/src/lib.rs. Failures surface as
- * "Error(Contract, #N)".
+ * Soroban contract error codes, mirrored from the contracts' `contracterror`
+ * enums. Failures surface as "Error(Contract, #N)", and the same number means
+ * different things per contract, so each typed client names its table.
  */
-const CONTRACT_ERRORS: Record<number, string> = {
-  1: "The contract has already been initialized.",
-  2: "The contract has no settlement token configured.",
-  3: "Amount must be greater than zero.",
-  4: "No payment exists with that id.",
-  5: "That payment is already completed or cancelled.",
-  6: "Add at least one recipient.",
-  7: "Too many recipients in a single batch (max 100).",
-  8: "Sender and recipient cannot be the same address.",
+export type ContractName = "tracker" | "registry" | "router";
+
+const CONTRACT_ERRORS: Record<ContractName, Record<number, string>> = {
+  // contracts/payment-tracker/src/lib.rs
+  tracker: {
+    1: "The contract has already been initialized.",
+    2: "The contract has no settlement token configured.",
+    3: "Amount must be greater than zero.",
+    4: "No payment exists with that id.",
+    5: "That payment is already completed or cancelled.",
+    6: "Add at least one recipient.",
+    7: "Too many recipients in a single batch (max 100).",
+    8: "Sender and recipient cannot be the same address.",
+  },
+  // contracts/service-registry/src/lib.rs
+  registry: {
+    1: "Service name cannot be empty.",
+    2: "Service name is too long (max 80 characters).",
+    3: "Price must be positive and within the allowed limit.",
+    4: "No service exists with that id.",
+    5: "Only the service's provider can do that.",
+    6: "That service has been deactivated.",
+    7: "Requested page is too large (max 50).",
+  },
+  // contracts/payment-router/src/lib.rs
+  router: {
+    1: "The router has already been initialized.",
+    2: "The router has no token or registry configured.",
+    3: "No receipt exists with that id.",
+    4: "No service exists with that id.",
+    5: "That service has been deactivated and cannot be paid for.",
+  },
 };
 
 function rawMessage(error: unknown): string {
@@ -137,7 +160,11 @@ function rawMessage(error: unknown): string {
  * Map any raw failure (wallet kit, RPC, Horizon, contract) onto the app's
  * error taxonomy. Idempotent: an AppError passes through unchanged.
  */
-export function classifyError(error: unknown, walletName?: string): AppError {
+export function classifyError(
+  error: unknown,
+  walletName?: string,
+  contract: ContractName = "tracker"
+): AppError {
   if (error instanceof AppError) {
     return error;
   }
@@ -166,7 +193,8 @@ export function classifyError(error: unknown, walletName?: string): AppError {
 
     return new AppError(
       "UNKNOWN",
-      CONTRACT_ERRORS[code] ?? `Contract rejected the call (error #${code}).`
+      CONTRACT_ERRORS[contract][code] ??
+        `Contract rejected the call (error #${code}).`
     );
   }
 
