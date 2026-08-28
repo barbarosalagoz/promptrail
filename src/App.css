@@ -1557,3 +1557,43 @@ footer {
     background-position: -200% 0;
   }
 }
+
+/* MOBILE POLISH */
+
+@media (max-width: 480px) {
+  .service-main {
+    flex-wrap: wrap;
+  }
+
+  .service-detail {
+    flex: 1 1 60%;
+  }
+
+  .service-price {
+    margin-left: 34px;
+  }
+
+  .service-pay {
+    flex: 1 1 100%;
+
+    padding: 11px 18px;
+  }
+
+  .services-contracts {
+    flex-direction: column;
+
+    align-items: flex-start;
+  }
+
+  .tracker-list-heading {
+    flex-wrap: wrap;
+
+    gap: 8px;
+  }
+
+  .tx-status {
+    flex-direction: column;
+
+    align-items: flex-start;
+  }
+}
