@@ -10,12 +10,18 @@ import {
   completePayment,
   createBatch,
   createPayment,
+  fetchContractEvents,
   getSentPayments,
   stroopsToXlm,
   xlmToStroops,
 } from "../contract/paymentTracker";
 
-import type { BatchRecipient, TrackedPayment } from "../contract/paymentTracker";
+import type {
+  BatchRecipient,
+  ContractEventItem,
+  TrackedPayment,
+  TxStatus,
+} from "../contract/paymentTracker";
 
 import { AppError, classifyError, insufficientBalance } from "../errors";
 
@@ -32,6 +38,9 @@ interface RecipientRow {
 
 const emptyRow = (): RecipientRow => ({ destination: "", amount: "" });
 
+/** How often the payment list and event feed re-sync with the chain. */
+const POLL_INTERVAL_MS = 8_000;
+
 const explorerTx = (hash: string) =>
   `https://stellar.expert/explorer/testnet/tx/${hash}`;
 
@@ -40,6 +49,19 @@ const shortenAddress = (address: string) =>
 
 const formatTimestamp = (seconds: number) =>
   seconds ? new Date(seconds * 1000).toLocaleString() : "—";
+
+const EVENT_LABELS: Record<string, { icon: string; label: string }> = {
+  payment_created: { icon: "+", label: "Payment created" },
+  payment_completed: { icon: "✓", label: "Payment completed" },
+  payment_cancelled: { icon: "↩", label: "Payment cancelled" },
+  tracker_initialized: { icon: "⚙", label: "Tracker initialized" },
+};
+
+const formatEventTime = (iso: string) => {
+  const time = new Date(iso);
+
+  return Number.isNaN(time.getTime()) ? iso : time.toLocaleTimeString();
+};
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -77,6 +99,11 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
   const [actionHash, setActionHash] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
+  /** Progress of the in-flight transaction, if any. */
+  const [txStatus, setTxStatus] = useState<TxStatus | null>(null);
+
+  const [events, setEvents] = useState<ContractEventItem[]>([]);
+
   /*
    * Load the sender's payments from the contract's read-only views.
    *
@@ -86,10 +113,18 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
   const load = useCallback(
     async (isActive: () => boolean) => {
       try {
-        const result = await getSentPayments(walletAddress, walletAddress);
+        const [result, recentEvents] = await Promise.all([
+          getSentPayments(walletAddress, walletAddress),
+          fetchContractEvents(8).catch(
+            () => null // the event feed is best-effort; never fail the list
+          ),
+        ]);
 
         if (isActive()) {
           setPayments(result);
+          if (recentEvents) {
+            setEvents(recentEvents);
+          }
           setLoadError(null);
         }
       } catch (error) {
@@ -125,6 +160,32 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
     setLoading(true);
     await load(() => true);
   }, [load]);
+
+  /*
+   * Real-time updates: poll the contract's read views and event stream so
+   * status transitions (Pending -> Completed/Cancelled) appear without a
+   * manual refresh — including changes made from another browser or the CLI.
+   * Paused only while a transaction of our own is in flight (it refreshes
+   * explicitly on completion).
+   */
+  const pollingPaused = submitting || busyId !== null;
+
+  useEffect(() => {
+    if (pollingPaused) {
+      return;
+    }
+
+    let active = true;
+
+    const interval = window.setInterval(() => {
+      void load(() => active);
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [load, pollingPaused]);
 
   const updateRow = (index: number, patch: Partial<RecipientRow>) => {
     setRows((current) =>
@@ -219,7 +280,7 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
 
     try {
       if (batchMode) {
-        const result = await createBatch(walletAddress, recipients);
+        const result = await createBatch(walletAddress, recipients, setTxStatus);
 
         setActionHash(result.hash);
         setActionNotice(
@@ -229,7 +290,8 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
         const result = await createPayment(
           walletAddress,
           recipients[0].destination,
-          recipients[0].amount
+          recipients[0].amount,
+          setTxStatus
         );
 
         setActionHash(result.hash);
@@ -241,6 +303,7 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
     } catch (error) {
       setActionError(classifyError(error));
     } finally {
+      setTxStatus(null);
       setSubmitting(false);
     }
   };
@@ -253,8 +316,8 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
 
     try {
       const result = release
-        ? await completePayment(walletAddress, payment.id)
-        : await cancelPayment(walletAddress, payment.id);
+        ? await completePayment(walletAddress, payment.id, setTxStatus)
+        : await cancelPayment(walletAddress, payment.id, setTxStatus);
 
       setActionHash(result.hash);
       setActionNotice(
@@ -267,6 +330,7 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
     } catch (error) {
       setActionError(classifyError(error));
     } finally {
+      setTxStatus(null);
       setBusyId(null);
     }
   };
@@ -388,6 +452,30 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
         </button>
       </form>
 
+      {txStatus && (
+        <div className="tx-status">
+          <span className="tx-status-spinner" />
+
+          <div>
+            <strong>
+              {txStatus.phase === "signing"
+                ? "Waiting for wallet signature..."
+                : "Submitted — waiting for on-chain confirmation..."}
+            </strong>
+
+            {txStatus.hash && (
+              <a
+                href={explorerTx(txStatus.hash)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {txStatus.hash.slice(0, 8)}...{txStatus.hash.slice(-8)} ↗
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {actionError && (
         <div className="transaction-result transaction-failure">
           <span className="result-icon">✕</span>
@@ -426,7 +514,14 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
       )}
 
       <div className="tracker-list-heading">
-        <h4>Your tracked payments</h4>
+        <h4>
+          Your tracked payments
+
+          <span className="tracker-live">
+            <span className="tracker-live-dot" />
+            LIVE
+          </span>
+        </h4>
 
         <button
           type="button"
@@ -495,6 +590,59 @@ function PaymentTracker({ walletAddress, xlmBalance }: PaymentTrackerProps) {
           </li>
         ))}
       </ul>
+
+      {events.length > 0 && (
+        <div className="tracker-events">
+          <div className="tracker-list-heading">
+            <h4>Recent contract events</h4>
+
+            <span className="tracker-events-caption">
+              from Soroban RPC, every {POLL_INTERVAL_MS / 1000}s
+            </span>
+          </div>
+
+          <ul className="tracker-event-list">
+            {events.map((event) => {
+              const meta = EVENT_LABELS[event.kind] ?? {
+                icon: "•",
+                label: event.kind,
+              };
+
+              return (
+                <li className="tracker-event" key={event.id}>
+                  <span
+                    className={`tracker-event-icon tracker-event-${event.kind}`}
+                  >
+                    {meta.icon}
+                  </span>
+
+                  <div className="tracker-event-detail">
+                    <span>
+                      {meta.label}
+                      {event.paymentId !== undefined &&
+                        ` #${event.paymentId}`}
+                      {event.amount !== undefined &&
+                        ` — ${stroopsToXlm(event.amount)} XLM`}
+                    </span>
+
+                    <span className="tracker-event-time">
+                      {formatEventTime(event.closedAt)} · ledger {event.ledger}
+                    </span>
+                  </div>
+
+                  <a
+                    href={explorerTx(event.txHash)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    tx ↗
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <span className="card-note">
         Escrowed funds are held by the contract, not by PromptRail.

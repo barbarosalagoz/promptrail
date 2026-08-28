@@ -184,13 +184,24 @@ export interface InvocationResult<T> {
   value: T;
 }
 
+/** Progress of an in-flight write, for a live status indicator in the UI. */
+export interface TxStatus {
+  phase: "signing" | "pending";
+  hash?: string;
+}
+
+export type TxStatusListener = (status: TxStatus) => void;
+
 /**
- * Prepare, sign with Freighter, submit, and await a state-changing call.
+ * Prepare, sign with the connected wallet, submit, and await a
+ * state-changing call. `onStatus` fires as the transaction advances so the
+ * UI can show signing / pending states with the hash.
  */
 async function invoke<T>(
   sourceAddress: string,
   method: string,
-  args: xdr.ScVal[]
+  args: xdr.ScVal[],
+  onStatus?: TxStatusListener
 ): Promise<InvocationResult<T>> {
   const account = await server.getAccount(sourceAddress);
 
@@ -213,6 +224,8 @@ async function invoke<T>(
    * Sign with whichever wallet the kit has connected (Freighter, Albedo,
    * xBull). A decline surfaces as a typed USER_REJECTED error.
    */
+  onStatus?.({ phase: "signing" });
+
   const signedXdr = await signWithWallet(
     prepared.toEnvelope().toXdr("base64"),
     sourceAddress
@@ -225,6 +238,8 @@ async function invoke<T>(
   if (sent.status === "ERROR") {
     throw new Error("Stellar rejected the transaction.");
   }
+
+  onStatus?.({ phase: "pending", hash: sent.hash });
 
   const confirmed = await waitForTransaction(sent.hash);
 
@@ -306,13 +321,15 @@ function toTrackedPayment(raw: RawPayment): TrackedPayment {
 export async function createPayment(
   sender: string,
   destination: string,
-  amount: bigint
+  amount: bigint,
+  onStatus?: TxStatusListener
 ): Promise<InvocationResult<number>> {
-  const result = await invoke<number>(sender, "create_payment", [
-    addressArg(sender),
-    addressArg(destination),
-    i128Arg(amount),
-  ]);
+  const result = await invoke<number>(
+    sender,
+    "create_payment",
+    [addressArg(sender), addressArg(destination), i128Arg(amount)],
+    onStatus
+  );
 
   return { hash: result.hash, value: Number(result.value) };
 }
@@ -320,12 +337,15 @@ export async function createPayment(
 /** Escrow one payment per recipient in a single invocation. */
 export async function createBatch(
   sender: string,
-  recipients: BatchRecipient[]
+  recipients: BatchRecipient[],
+  onStatus?: TxStatusListener
 ): Promise<InvocationResult<number[]>> {
-  const result = await invoke<Array<number | bigint>>(sender, "create_batch", [
-    addressArg(sender),
-    recipientsArg(recipients),
-  ]);
+  const result = await invoke<Array<number | bigint>>(
+    sender,
+    "create_batch",
+    [addressArg(sender), recipientsArg(recipients)],
+    onStatus
+  );
 
   return {
     hash: result.hash,
@@ -336,17 +356,19 @@ export async function createBatch(
 /** Release an escrowed payment to its recipient. */
 export function completePayment(
   sender: string,
-  id: number
+  id: number,
+  onStatus?: TxStatusListener
 ): Promise<InvocationResult<null>> {
-  return invoke<null>(sender, "complete_payment", [u32Arg(id)]);
+  return invoke<null>(sender, "complete_payment", [u32Arg(id)], onStatus);
 }
 
 /** Refund an escrowed payment to its sender. */
 export function cancelPayment(
   sender: string,
-  id: number
+  id: number,
+  onStatus?: TxStatusListener
 ): Promise<InvocationResult<null>> {
-  return invoke<null>(sender, "cancel_payment", [u32Arg(id)]);
+  return invoke<null>(sender, "cancel_payment", [u32Arg(id)], onStatus);
 }
 
 /** Fetch a single payment. */
@@ -404,4 +426,104 @@ export async function getSentPayments(
   );
 
   return payments.sort((a, b) => b.id - a.id);
+}
+
+/* ------------------------------------------------------------------ */
+/* Contract events                                                     */
+/* ------------------------------------------------------------------ */
+
+export type ContractEventKind =
+  | "payment_created"
+  | "payment_completed"
+  | "payment_cancelled"
+  | "tracker_initialized";
+
+/** A decoded contract event, newest-first in feeds. */
+export interface ContractEventItem {
+  id: string;
+  kind: ContractEventKind;
+  txHash: string;
+  ledger: number;
+  closedAt: string;
+  paymentId?: number;
+  amount?: bigint;
+  from?: string;
+  to?: string;
+}
+
+/** How far back to scan for events (~2 hours of ledgers at ~5s each). */
+const EVENT_LOOKBACK_LEDGERS = 1_500;
+
+/**
+ * Fetch this contract's recent events straight from Soroban RPC.
+ *
+ * These are the typed #[contractevent]s the contract emits on
+ * create / complete / cancel, which is what lets the UI reflect on-chain
+ * activity without a backend.
+ */
+export async function fetchContractEvents(
+  limit = 10
+): Promise<ContractEventItem[]> {
+  const latest = await server.getLatestLedger();
+  const startLedger = Math.max(1, latest.sequence - EVENT_LOOKBACK_LEDGERS);
+
+  const response = await server.getEvents({
+    startLedger,
+    filters: [{ type: "contract", contractIds: [PAYMENT_TRACKER_ID] }],
+    limit: 100,
+  });
+
+  const items: ContractEventItem[] = [];
+
+  for (const event of response.events) {
+    if (!event.topic.length) {
+      continue;
+    }
+
+    let kind: unknown;
+
+    try {
+      kind = scValToNative(event.topic[0]);
+    } catch {
+      continue;
+    }
+
+    if (
+      kind !== "payment_created" &&
+      kind !== "payment_completed" &&
+      kind !== "payment_cancelled" &&
+      kind !== "tracker_initialized"
+    ) {
+      continue;
+    }
+
+    const item: ContractEventItem = {
+      id: event.id,
+      kind,
+      txHash: event.txHash,
+      ledger: event.ledger,
+      closedAt: event.ledgerClosedAt,
+    };
+
+    try {
+      const data = scValToNative(event.value) as Record<string, unknown>;
+
+      if (data && typeof data === "object") {
+        if (data.id !== undefined) item.paymentId = Number(data.id);
+        if (data.amount !== undefined) item.amount = BigInt(data.amount as bigint);
+      }
+
+      // from / to are topics 1 and 2 on payment events.
+      if (event.topic.length >= 3) {
+        item.from = String(scValToNative(event.topic[1]));
+        item.to = String(scValToNative(event.topic[2]));
+      }
+    } catch {
+      // Leave the event with just its kind and hash if decoding fails.
+    }
+
+    items.push(item);
+  }
+
+  return items.reverse().slice(0, limit);
 }

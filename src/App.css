@@ -1218,3 +1218,190 @@ footer {
 
   font-size: 11px !important;
 }
+
+/* REAL-TIME STATUS */
+
+.tx-status {
+  margin-top: 18px;
+  padding: 14px 16px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 12px;
+
+  background: rgba(139, 92, 246, 0.06);
+
+  text-align: left;
+}
+
+.tx-status strong {
+  display: block;
+
+  font-size: 13px;
+}
+
+.tx-status a {
+  color: #a78bfa;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  text-decoration: none;
+}
+
+.tx-status-spinner {
+  width: 16px;
+  height: 16px;
+
+  flex-shrink: 0;
+
+  border: 2px solid rgba(167, 139, 250, 0.25);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+
+  animation: tracker-spin 0.9s linear infinite;
+}
+
+@keyframes tracker-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tracker-live {
+  margin-left: 10px;
+
+  display: inline-flex;
+  align-items: center;
+
+  gap: 5px;
+
+  color: #6ee7b7;
+
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.tracker-live-dot {
+  width: 6px;
+  height: 6px;
+
+  border-radius: 50%;
+
+  background: #34d399;
+
+  animation: tracker-pulse 2s ease-in-out infinite;
+}
+
+@keyframes tracker-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* CONTRACT EVENT FEED */
+
+.tracker-events {
+  margin-top: 26px;
+}
+
+.tracker-events-caption {
+  color: #6b7280;
+
+  font-size: 10px;
+}
+
+.tracker-event-list {
+  margin: 0;
+  padding: 0;
+
+  list-style: none;
+
+  text-align: left;
+}
+
+.tracker-event {
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+
+  padding: 9px 4px;
+
+  border-bottom: 1px solid #1c202c;
+
+  font-size: 12px;
+}
+
+.tracker-event:last-child {
+  border-bottom: 0;
+}
+
+.tracker-event-icon {
+  width: 22px;
+  height: 22px;
+
+  flex-shrink: 0;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 7px;
+
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tracker-event-payment_created {
+  background: rgba(251, 191, 36, 0.12);
+
+  color: #fcd34d;
+}
+
+.tracker-event-payment_completed {
+  background: rgba(72, 224, 164, 0.12);
+
+  color: #6ee7b7;
+}
+
+.tracker-event-payment_cancelled {
+  background: rgba(248, 113, 113, 0.12);
+
+  color: #fca5a5;
+}
+
+.tracker-event-tracker_initialized {
+  background: rgba(139, 92, 246, 0.12);
+
+  color: #c4b5fd;
+}
+
+.tracker-event-detail {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 2px;
+}
+
+.tracker-event-time {
+  color: #6b7280;
+
+  font-size: 10px;
+}
+
+.tracker-event a {
+  color: #a78bfa;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  text-decoration: none;
+}
