@@ -14,13 +14,18 @@ while a payment is in flight and tracks its status across many recipients.
 * Sender-authorized release and refund
 * On-chain events for every state change
 
-The off-chain half is the wallet dApp carried forward from the White Belt stage:
+The off-chain half is a **multi-wallet dApp** built on
+[StellarWalletsKit](https://stellarwalletskit.dev/):
 
-* Connecting a Freighter wallet
+* Connecting any supported Stellar wallet — **Freighter, Albedo, or xBull** —
+  through a wallet-selection modal
+* Live payment status and a contract event feed that update in near-real-time
+* Distinctly surfaced error handling (wallet not found, request rejected,
+  insufficient balance)
 * Detecting and validating the active Stellar network
 * Fetching an account's XLM balance
 * Building a Stellar payment transaction
-* Signing the transaction securely with Freighter
+* Signing the transaction securely in the user's chosen wallet
 * Submitting the signed transaction to Stellar Testnet
 * Displaying transaction success, failure, and transaction hash information
 
@@ -40,11 +45,11 @@ PromptRail is deployed publicly on Vercel and has been tested end-to-end on Stel
 
 Verified production flow:
 
-- ✅ Freighter wallet connection
+- ✅ Multi-wallet connection (Freighter / Albedo / xBull)
 - ✅ Stellar Testnet detection
 - ✅ XLM balance retrieval
 - ✅ XLM transaction creation
-- ✅ Freighter transaction signing
+- ✅ Wallet transaction signing
 - ✅ Stellar Testnet submission
 - ✅ Transaction confirmation
 - ✅ Transaction hash and explorer link
@@ -67,6 +72,25 @@ payment is in flight and tracks its status on-chain.
 | **Deployer** | `GDMLL4EVSZHPFB3IES7XH72TNFITQ64G3S57SAHOE5L6LBZV4LPRZDJY` |
 | **Source** | [contracts/payment-tracker/src/lib.rs](contracts/payment-tracker/src/lib.rs) |
 | **Tests** | [contracts/payment-tracker/src/test.rs](contracts/payment-tracker/src/test.rs) |
+
+### Proof of invocation
+
+A real `create_payment` call against the deployed contract (escrowed 0.5 XLM,
+payment id `3`, later released with `complete_payment`):
+
+```text
+Transaction hash:
+d13babf0aefbad0edd6f2057a6b85f58b4d38dee3d26f3226091bfe833081c0d
+```
+
+* [View on stellar.expert](https://stellar.expert/explorer/testnet/tx/d13babf0aefbad0edd6f2057a6b85f58b4d38dee3d26f3226091bfe833081c0d)
+* [View on Horizon (always live)](https://horizon-testnet.stellar.org/transactions/d13babf0aefbad0edd6f2057a6b85f58b4d38dee3d26f3226091bfe833081c0d)
+
+The matching `complete_payment` is
+[`c7b8739f…`](https://stellar.expert/explorer/testnet/tx/c7b8739f09343f51e38cd654aba3a3201241c0532c0cd052d9a3ec054eae1ecb)
+([Horizon](https://horizon-testnet.stellar.org/transactions/c7b8739f09343f51e38cd654aba3a3201241c0532c0cd052d9a3ec054eae1ecb)).
+The full invocation history is tabulated under
+[Verified on-chain activity](#verified-on-chain-activity).
 
 ### Verify the deployment
 
@@ -163,6 +187,8 @@ Every function below was invoked against the deployed contract on Testnet:
 | `create_batch` (2 recipients, ids 1 & 2) | [`f563d568…`](https://stellar.expert/explorer/testnet/tx/f563d56807a758a6bee84d097ca6aeee2f5d7af05a556a875c5227701cb74b61) |
 | `complete_payment` (id 1) | [`4dcfe1bf…`](https://stellar.expert/explorer/testnet/tx/4dcfe1bfec29b8b8eca1d4276a5cf906b0a53084eda6b0d421408c025c78cd88) |
 | `cancel_payment` (id 2) | [`50664433…`](https://stellar.expert/explorer/testnet/tx/50664433fb25b97965f0b4c2ac9c3c5957cf0a8cd07bb81958d750088b6a17d2) |
+| `create_payment` (0.5 XLM, id 3) | [`d13babf0…`](https://stellar.expert/explorer/testnet/tx/d13babf0aefbad0edd6f2057a6b85f58b4d38dee3d26f3226091bfe833081c0d) |
+| `complete_payment` (id 3) | [`c7b8739f…`](https://stellar.expert/explorer/testnet/tx/c7b8739f09343f51e38cd654aba3a3201241c0532c0cd052d9a3ec054eae1ecb) |
 
 Every one of those transactions is confirmed successful on Horizon — for
 example, the `create_payment` above landed in ledger 4380292:
@@ -181,7 +207,8 @@ The dApp talks to the deployed contract directly — there is no backend.
 * [`src/contract/paymentTracker.ts`](src/contract/paymentTracker.ts) is a typed
   client. Read-only views run through Soroban RPC **simulation**, so listing
   payments costs nothing and needs no signature. State-changing calls are
-  prepared against RPC, signed by **Freighter**, submitted, and polled to
+  prepared against RPC, signed by **the connected wallet** (via
+  StellarWalletsKit), submitted, and polled to
   confirmation.
 * [`src/components/PaymentTracker.tsx`](src/components/PaymentTracker.tsx) is
   the UI panel. It lists the connected wallet's sent payments with live
@@ -267,6 +294,70 @@ stellar contract invoke --id <CONTRACT_ID> --source deployer --network testnet -
 
 ---
 
+## Multi-Wallet Support
+
+PromptRail connects through
+[StellarWalletsKit](https://stellarwalletskit.dev/), so the user picks their
+wallet in a selection modal instead of being locked to one extension:
+
+| Wallet | Type |
+| --- | --- |
+| Freighter | Browser extension |
+| Albedo | Web-based signer |
+| xBull | Browser extension / web |
+
+![Wallet selection modal with multiple wallets](docs/screenshots/wallet-options.png)
+
+The connect card also lists each wallet with a live **detected** badge or an
+**install** link before any connection attempt. All signing — White Belt XLM
+payments and Payment Tracker contract calls alike — goes through the kit, so
+every flow works with whichever wallet the user chose.
+
+Implementation: [src/services/wallet.ts](src/services/wallet.ts)
+
+---
+
+## Error Handling
+
+Every failure funnels through one taxonomy in [src/errors.ts](src/errors.ts),
+and the three review-relevant cases render with their own banner title,
+message, and follow-up hint — not a generic catch-all:
+
+| Error | Detection | User sees |
+| --- | --- | --- |
+| **Wallet not found** | Wallet availability is probed before connect (`getWalletOptions`), and a not-installed failure from the kit maps to `WALLET_NOT_FOUND` | "Wallet not found" banner naming the wallet, plus an install link for that wallet |
+| **User rejected** | A declined connection or signature in the wallet maps to `USER_REJECTED` | "Request declined in wallet" banner, with a reassurance that nothing was submitted |
+| **Insufficient balance** | Pre-checked against the spendable balance before any signing prompt, in both the XLM payment form and the Payment Tracker; `op_underfunded` / `tx_insufficient_balance` / SAC balance errors map to the same case if it slips through | "Insufficient balance" banner with the amounts, plus a Friendbot funding hint |
+
+Wrong-network and Soroban contract error codes (`Error(Contract, #N)`) are
+mapped in the same file.
+
+---
+
+## Real-Time Event Integration
+
+The contract emits typed `#[contractevent]`s on every state change, and the
+frontend consumes them without a backend:
+
+* **Live payment list** — the tracker polls the contract's read-only views
+  every 8 seconds, so a payment completed from anywhere (another browser, the
+  CLI) transitions `Pending → Completed/Cancelled` on screen without a page
+  refresh.
+* **Contract event feed** — recent `payment_created` / `payment_completed` /
+  `payment_cancelled` events are fetched straight from Soroban RPC
+  (`getEvents`), decoded, and listed with amount, ledger, timestamp, and an
+  explorer link per transaction.
+* **In-flight transaction status** — submissions show a live indicator:
+  *waiting for wallet signature* → *submitted, waiting for confirmation* (with
+  the tx hash linked as soon as the network accepts it) → confirmed or a
+  distinct error.
+
+Implementation: [src/components/PaymentTracker.tsx](src/components/PaymentTracker.tsx)
+and `fetchContractEvents` in
+[src/contract/paymentTracker.ts](src/contract/paymentTracker.ts).
+
+---
+
 ## Yellow Belt Requirements
 
 | Requirement                          | Status |
@@ -276,21 +367,27 @@ stellar contract invoke --id <CONTRACT_ID> --source deployer --network testnet -
 | Contract unit tests (13 passing)      | ✅      |
 | Contract deployed to Stellar Testnet  | ✅      |
 | Contract ID documented in README      | ✅      |
-| Contract invoked on-chain             | ✅      |
+| Contract invoked on-chain (tx hash below) | ✅  |
 | Frontend calls the deployed contract  | ✅      |
+| Multi-wallet via StellarWalletsKit    | ✅      |
+| Wallet options screenshot             | ✅      |
+| Wallet not found — distinct error     | ✅      |
+| User rejected — distinct error        | ✅      |
+| Insufficient balance — distinct error | ✅      |
+| Real-time status + contract events    | ✅      |
 
 Carried forward from the White Belt stage:
 
 | Requirement                        | Status |
 | ---------------------------------- | ------ |
-| Freighter wallet setup             | ✅      |
+| Wallet setup (now multi-wallet)    | ✅      |
 | Stellar Testnet support            | ✅      |
 | Wallet connect                     | ✅      |
 | Wallet disconnect                  | ✅      |
 | Fetch XLM balance                  | ✅      |
 | Display XLM balance                | ✅      |
 | Send XLM on Testnet                | ✅      |
-| Transaction signing with Freighter | ✅      |
+| Transaction signing in the wallet  | ✅      |
 | Success feedback                   | ✅      |
 | Failure feedback                   | ✅      |
 | Transaction hash display           | ✅      |
@@ -306,7 +403,7 @@ Carried forward from the White Belt stage:
 
 ### Wallet Connected
 
-The application detects Freighter, requests wallet access, and displays the connected Stellar public address.
+The application connects the selected wallet and displays the connected Stellar public address.
 
 ![Wallet Connected](docs/screenshots/wallet-connected.png)
 
@@ -322,7 +419,7 @@ PromptRail fetches the connected wallet's native XLM balance directly from Stell
 
 ### Successful Testnet Transaction
 
-A real XLM payment is created, signed through Freighter, submitted to Stellar Testnet, and confirmed by Horizon.
+A real XLM payment is created, signed in the connected wallet, submitted to Stellar Testnet, and confirmed by Horizon.
 
 The interface displays the transaction hash and provides a direct link to the transaction on Stellar Expert.
 
@@ -346,10 +443,10 @@ User
   ▼
 PromptRail
   │
-  ├── Connect Freighter
+  ├── Connect wallet (kit modal)
   │
   ▼
-Freighter Wallet
+Stellar Wallet (via kit)
   │
   ├── Public Stellar Address
   │
@@ -371,7 +468,7 @@ TransactionBuilder
 XLM Payment Operation
   │
   ▼
-Freighter Signature
+Wallet Signature
   │
   ▼
 Signed XDR
@@ -390,9 +487,9 @@ Transaction Hash + Updated Balance
 
 ## Features
 
-### Freighter Wallet Integration
+### Multi-Wallet Integration (StellarWalletsKit)
 
-PromptRail detects whether the Freighter wallet is available and requests access to the user's Stellar public address.
+PromptRail opens a wallet-selection modal (Freighter, Albedo, xBull), shows which wallets are detected in the browser, and requests access to the user's Stellar public address.
 
 Private keys are never exposed to PromptRail.
 
@@ -400,7 +497,7 @@ Private keys are never exposed to PromptRail.
 
 ### Network Validation
 
-The application reads the currently active Freighter network.
+The application reads the currently active network from the connected wallet.
 
 Transactions are only allowed when the wallet is connected to:
 
@@ -408,7 +505,7 @@ Transactions are only allowed when the wallet is connected to:
 Stellar Testnet
 ```
 
-If Freighter is connected to the public Stellar network instead, PromptRail displays a warning and prevents Testnet transaction activity.
+If the wallet is connected to the public Stellar network instead, PromptRail displays a warning and prevents Testnet transaction activity.
 
 ---
 
@@ -435,7 +532,7 @@ PromptRail then:
 4. Loads the sender's account
 5. Builds an XLM payment transaction
 6. Converts the transaction to XDR
-7. Requests a signature from Freighter
+7. Requests a signature from the connected wallet
 8. Submits the signed transaction to Horizon
 9. Displays the transaction result
 10. Refreshes the wallet balance
@@ -482,7 +579,7 @@ Examples include:
 ### Stellar
 
 * Stellar JavaScript SDK
-* Freighter API
+* StellarWalletsKit (Freighter, Albedo, xBull)
 * Stellar Horizon
 * Soroban RPC
 * Stellar Testnet
@@ -502,19 +599,23 @@ Examples include:
 
 Make sure the following are installed:
 
-* Node.js
+* Node.js 20+
 * npm
 * Git
-* Freighter Wallet browser extension
+* A supported Stellar wallet: the **Freighter** or **xBull** browser
+  extension, or **Albedo** (web-based, nothing to install)
 
-Freighter must be configured to use **Stellar Testnet**.
+The wallet must be configured for **Stellar Testnet**.
+
+For contract development additionally install Rust and the Stellar CLI — see
+[Contract Development](#contract-development).
 
 ---
 
 ### Clone the Repository
 
 ```bash
-git clone [<YOUR-GITHUB-REPOSITORY-URL>](https://github.com/barbarosalagoz/promptrail.git)
+git clone https://github.com/barbarosalagoz/promptrail.git
 cd promptrail
 ```
 
@@ -540,21 +641,34 @@ Vite will provide a local development URL, typically:
 http://localhost:5173
 ```
 
-Open it in a browser where the Freighter extension is installed.
+Open it in a browser with your wallet available. No environment variables are
+needed — the deployed contract ID and Testnet endpoints are part of the app
+configuration
+([src/contract/paymentTracker.ts](src/contract/paymentTracker.ts)).
+
+---
+
+### Production Build
+
+```bash
+npm run build
+```
+
+The static site is emitted to `dist/`. `npm run lint` runs the ESLint suite.
 
 ---
 
 ## Using PromptRail
 
-### 1. Connect Freighter
+### 1. Connect a Wallet
 
 Click:
 
 ```text
-Connect Freighter
+Connect Wallet
 ```
 
-Approve the connection request inside Freighter.
+Pick a wallet in the selection modal (Freighter, Albedo, or xBull) and approve the connection request.
 
 ---
 
@@ -602,7 +716,7 @@ Click:
 Send XLM
 ```
 
-Freighter will open a transaction approval request.
+The connected wallet will open a transaction approval request.
 
 Review the transaction and approve the signature.
 
@@ -629,7 +743,7 @@ The wallet balance is refreshed automatically after confirmation.
 
 PromptRail never requests, stores, or handles a user's private key.
 
-Transaction signing occurs inside Freighter.
+Transaction signing occurs inside the connected wallet.
 
 The application only receives:
 
@@ -668,10 +782,14 @@ promptrail/
 │   ├── App.css
 │   ├── index.css
 │   ├── main.tsx
+│   ├── errors.ts                  # error taxonomy: wallet not found,
+│   │                              #   user rejected, insufficient balance...
+│   ├── services/
+│   │   └── wallet.ts              # multi-wallet service (StellarWalletsKit)
 │   ├── components/
-│   │   └── PaymentTracker.tsx     # Payment Tracker UI panel
+│   │   └── PaymentTracker.tsx     # tracker UI: live status, event feed
 │   └── contract/
-│       └── paymentTracker.ts      # typed client for the deployed contract
+│       └── paymentTracker.ts      # typed client + RPC event fetching
 │
 ├── public/
 │
@@ -702,6 +820,11 @@ PromptRail was developed incrementally with meaningful Git commits covering:
 12. Contract unit tests
 13. Testnet deployment and on-chain verification
 14. Frontend integration with the deployed contract
+15. Centralized error taxonomy
+16. StellarWalletsKit multi-wallet integration
+17. Wallet-kit signing for contract calls and balance pre-checks
+18. Real-time status polling and contract event feed
+19. Wallet options screenshot and README updates
 
 ---
 
@@ -718,6 +841,9 @@ This project demonstrates practical understanding of:
 * Contract unit testing with the Soroban test environment
 * Building, deploying, and invoking a contract on Testnet
 * Calling a deployed contract from a React frontend
+* Multi-wallet integration with StellarWalletsKit
+* Consuming contract events through Soroban RPC in near-real-time
+* Typed, user-facing error taxonomies for Web3 failures
 * Stellar account architecture
 * Stellar public addresses
 * Testnet development
