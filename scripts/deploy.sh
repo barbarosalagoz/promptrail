@@ -18,16 +18,26 @@ set -euo pipefail
 
 IDENTITY="${1:-deployer}"
 NETWORK="testnet"
-ALIAS_DIR=".stellar/contract-ids"
 
 say() { printf '\n\033[1;35m== %s\033[0m\n' "$*"; }
 
 alias_id() {
-  # Extract the contract id stored for an alias, if any.
-  local file="$ALIAS_DIR/$1.json"
-  if [ -f "$file" ]; then
-    python -c "import json;print(json.load(open('$file'))['ids']['Test SDF Network ; September 2015'])" 2>/dev/null || true
-  fi
+  # Extract the contract id stored for an alias, if any. Depending on CLI
+  # version and cwd, aliases land in the repo-local .stellar/ or in the
+  # global config dir — check both.
+  local name="$1" file id
+  for file in ".stellar/contract-ids/$name.json" "$HOME/.config/stellar/contract-ids/$name.json"; do
+    if [ -f "$file" ]; then
+      # {"ids":{"Test SDF Network ; September 2015":"C..."}} — pure-shell
+      # extraction, since path styles differ across platforms.
+      id="$(grep -oE '"C[A-Z2-7]{55}"' "$file" | head -1 | tr -d '"')"
+      if [ -n "$id" ]; then
+        echo "$id"
+        return 0
+      fi
+    fi
+  done
+  true
 }
 
 say "Toolchain"
