@@ -145,6 +145,24 @@ Every function below was invoked against the deployed contract on Testnet:
 Re-completing payment `0` on the live contract correctly fails with
 `Error(Contract, #5)` (`NotPending`).
 
+### Frontend integration
+
+The dApp talks to the deployed contract directly — there is no backend.
+
+* [`src/contract/paymentTracker.ts`](src/contract/paymentTracker.ts) is a typed
+  client. Read-only views run through Soroban RPC **simulation**, so listing
+  payments costs nothing and needs no signature. State-changing calls are
+  prepared against RPC, signed by **Freighter**, submitted, and polled to
+  confirmation.
+* [`src/components/PaymentTracker.tsx`](src/components/PaymentTracker.tsx) is
+  the UI panel. It lists the connected wallet's sent payments with live
+  `Pending` / `Completed` / `Cancelled` status, offers **Complete** and
+  **Cancel** on pending rows, and supports both a single payment and a
+  multi-recipient batch.
+
+Addresses and amounts are validated before a signing prompt is ever raised, and
+contract error codes are mapped back to readable messages.
+
 ---
 
 ## Contract Development
@@ -621,6 +639,8 @@ promptrail/
 │   ├── App.css
 │   ├── index.css
 │   ├── main.tsx
+│   ├── components/
+│   │   └── PaymentTracker.tsx     # Payment Tracker UI panel
 │   └── contract/
 │       └── paymentTracker.ts      # typed client for the deployed contract
 │

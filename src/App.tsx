@@ -19,6 +19,8 @@ import {
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
 
+import PaymentTracker from "./components/PaymentTracker";
+
 import "./App.css";
 
 const horizonServer = new Horizon.Server(
@@ -472,7 +474,7 @@ function App() {
           )
           .addMemo(
             Memo.text(
-              "PromptRail White Belt"
+              "PromptRail Yellow Belt"
             )
           )
           .setTimeout(30)
@@ -645,7 +647,7 @@ function App() {
 
       <section className="hero">
         <div className="eyebrow">
-          STELLAR WHITE BELT
+          STELLAR YELLOW BELT
         </div>
 
         <h2>
@@ -1039,6 +1041,10 @@ function App() {
           leave your wallet.
         </span>
       </section>
+
+      {walletAddress && isTestnet && (
+        <PaymentTracker walletAddress={walletAddress} />
+      )}
 
       <footer>
         Built on Stellar ·
