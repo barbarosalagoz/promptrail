@@ -28,7 +28,7 @@ Everything below was re-verified against the tip of `main` on 2026-09-01:
 
 > Note: Soroban RPC's event-retention window has rolled past the Aug 28
 > transactions, so the in-app **event feed** is empty until a fresh payment is
-> made. Make one live payment before recording the demo video.
+> made. Make one live payment before capturing tracker screenshots.
 
 ### Requirement checklist — requirement → implementation → evidence
 
@@ -43,7 +43,7 @@ four explicit points from the previous rejection.
 | 3 | Contract unit tests | `contracts/payment-tracker/src/test.rs` — 13 `#[test]` functions (L58–L308) | CI job `contract` runs `cargo test --workspace` on every push |
 | 4 | Multi-wallet via StellarWalletsKit (rejection point) | `src/services/wallet.ts` — kit init with Freighter/Albedo/xBull modules L42–L46, `authModal` L79, `signTransaction` L147 | Live modal on https://promptrail-ten.vercel.app/ (verified 2026-09-01); screenshot `docs/screenshots/wallet-options.png` |
 | 5 | Transaction handling (build → sign in wallet → submit → confirm, hash + explorer link) | `src/App.tsx` payment flow L499–L550; `src/contract/paymentTracker.ts` typed client (prepare/sign/submit/poll) | Screenshots `payment-success.png`, `payment-error.png`, `balance-testnet.png`; on-chain txs in the README table |
-| 6 | Real-time event synchronization (rejection point) | `src/contract/paymentTracker.ts` `fetchContractEvents` L464 (Soroban RPC `getEvents`); `src/components/PaymentTracker.tsx` 8s status polling L42/L180, event feed L118; typed `#[contractevent]`s in `lib.rs` L99–L127 | Feed visible in app after a fresh payment (capture in demo video) |
+| 6 | Real-time event synchronization (rejection point) | `src/contract/paymentTracker.ts` `fetchContractEvents` L464 (Soroban RPC `getEvents`); `src/components/PaymentTracker.tsx` 8s status polling L42/L180, event feed L118; typed `#[contractevent]`s in `lib.rs` L99–L127 | Feed visible in app after a fresh payment |
 | 7 | Distinct error handling (wallet not found / rejected / insufficient balance) | `src/errors.ts` taxonomy L12–L68; banners in `PaymentTracker.tsx` L81–L83 and `App.tsx` L47–L51 | `payment-error.png`; Freighter "install ↗" badge on live page doubles as wallet-not-found detection |
 | 8 | 12+ meaningful commits (rejection point) | — | 26 commits on `main` (`git rev-list --count main`) |
 | 9 | Public repo + public deployment | — | https://github.com/barbarosalagoz/promptrail · https://promptrail-ten.vercel.app/ |
@@ -53,7 +53,6 @@ four explicit points from the previous rejection.
 
 - No screenshot of the **Payment Tracker panel** itself (live status list +
   event feed) — only White Belt-era screenshots exist. → user capture below.
-- **Demo video** not recorded yet — placeholder in the submission text.
 - The Rise In *detailed* rubric sits behind login; this checklist maps to the
   public pillar list + the prior reviewer's explicit rejection points. If the
   logged-in form lists extra items, add them here.
@@ -90,7 +89,6 @@ four explicit points from the previous rejection.
 > - Repo: https://github.com/barbarosalagoz/promptrail
 > - Live app: https://promptrail-ten.vercel.app/
 > - Contract: https://stellar.expert/explorer/testnet/contract/CDWVMXTDTU6DJUG3BDUKI6SK72VIAVTJ44VWCL2VZ7OX5TCRRVD7HH6X
-> - Demo video: **[RECORD AND PASTE LINK]**
 
 **How to test (3 steps)**
 
@@ -108,37 +106,67 @@ four explicit points from the previous rejection.
 
 - [ ] **Screenshot:** Payment Tracker panel with a payment list + event feed
       (after one fresh payment) → save as
-      `docs/screenshots/tracker-live.png`, reference it from the README.
-- [ ] **Demo video** (~2–3 min): connect via modal → balance → create escrow
-      payment → complete it → event feed updates → tx on stellar.expert.
-      Upload (YouTube unlisted / Loom) and replace **[RECORD AND PASTE LINK]**.
-- [ ] **Rise In form:** paste the four blocks above into the matching fields;
+      `docs/screenshots/tracker-live.png`; it then gets referenced from the
+      README and row 6 above.
+- [ ] **Rise In form:** paste the blocks above into the matching fields;
       add any rubric items the logged-in form shows that this pack missed.
 
 ---
 
 ## Orange Belt
 
-*Skeleton — fill in when the challenge round starts.*
+Most of the work already exists on the **`orange-belt` branch** — open
+[PR #2](https://github.com/barbarosalagoz/promptrail/pull/2)
+("Orange Belt: inter-contract payments, CI/CD, production dApp",
+16 commits ahead of `main`). This section tracks what's built, what's
+verified, and what's left before submitting.
 
-### Requirements
+### What the branch delivers (per PR #2, spot-verified 2026-09-01)
 
-- [ ] _Copy the official Orange Belt requirement list here (from the Rise In
-      page while logged in)._
+- **Inter-contract communication** — two new Soroban contracts:
+  - `contracts/service-registry/` — on-chain service catalog
+    (`register_service` / `update_service` / `deactivate_service`,
+    `get_active_service` as the cross-call entry point, paginated
+    `list_active`, typed errors + events). 12 unit tests.
+  - `contracts/payment-router/` — `pay_for_service(payer, service_id)`
+    cross-calls the registry through its generated client in one invocation:
+    resolves price + payout, transfers XLM payer→provider, records a receipt,
+    emits `service_paid`. 11 unit tests incl. 6 integration tests over the
+    real cross-contract path.
+  - Yellow Belt `payment-tracker` untouched.
+- **Deployed to Testnet** (both verified on stellar.expert, same deployer
+  `GDMLL4EV…ZDJY`, 2026-09-01):
+  - service-registry: `CDPCOA6EGW5KN2TFOUZ2KS5ONSM3H44ZCMHTPBPM43VMJ5PTGWJ7JJSX`
+  - payment-router: `CCQXYM6U5TVKWXI6HKEIQFBYYA7PHRDPMCZFV2NGRN4NRGQ2ELZP5YCX`
+  - Real `pay_for_service` invocation confirmed on Horizon:
+    [`04053f6f…`](https://stellar.expert/explorer/testnet/tx/04053f6f86d31c2a6ff98081fbc44bd8cf1eb9f8631b3bb64167a1e0243177b6)
+- **CI/CD** — branch has its own `ci.yml` (fmt, clippy `-D warnings`, test /
+  npm lint, test, build) and `deploy-contracts.yml` (workflow_dispatch wasm
+  build; signing stays local in `scripts/deploy.sh`). A green run is
+  captured in `docs/screenshots/ci-pipeline.png` (on the branch).
+- **Frontend** — services marketplace (browse catalog, pay via router through
+  the wallet kit, provider registration, live receipts), merged two-contract
+  event feed, env-driven config, typed per-contract clients, mobile
+  responsive. 18 Vitest tests; `docs/screenshots/test-output.png` (on the
+  branch) shows all 36 contract + 18 frontend tests passing.
+- **Docs** — Orange Belt README section with architecture diagram;
+  `docs/DEMO_SCRIPT.md` = timed 90-second demo script for this marketplace UI.
 
-### Plan
+### Remaining before submission
 
-- [ ] Gap analysis vs. the Yellow Belt codebase
-- [ ] Contract work: _TBD_
-- [ ] Frontend work: _TBD_
-- [ ] On-chain evidence to produce: _TBD_
-
-### Verification snapshot — _date_
-
-| Check | Result |
-| --- | --- |
-| | |
+- [ ] Reconcile `main`'s `.github/workflows/ci.yml` (added 2026-09-01) with
+      the branch's richer `ci.yml` — resolve the merge conflict in favor of
+      the branch version.
+- [ ] Merge PR #2 once the Yellow Belt review cycle no longer needs `main`
+      frozen (merging changes the app the Yellow Belt links point to — decide
+      timing deliberately).
+- [ ] `mobile-ui.png` — manual capture (PR body lists it as missing).
+- [ ] Record the 90-second demo video following `docs/DEMO_SCRIPT.md`.
+- [ ] Re-run this pack's verification drill against the merged tip
+      (contracts resolve, txs confirmed, CI green, fresh events for the feed).
+- [ ] Copy the official Orange Belt rubric from the logged-in Rise In page
+      and map it row-by-row like the Yellow Belt table above.
 
 ### Submission text
 
-_TBD_
+_Draft after merge, using the PR #2 body as the base._
