@@ -12,8 +12,7 @@ the prior cycle was reviewed).
 
 ### Verification snapshot — 2026-09-01
 
-Everything below was re-verified against the tip of `main`
-(`85559bb` + this pack's commit) on 2026-09-01:
+Everything below was re-verified against the tip of `main` on 2026-09-01:
 
 | Check | Result |
 | --- | --- |
@@ -24,8 +23,8 @@ Everything below was re-verified against the tip of `main`
 | Live frontend (Vercel) | ✅ loads; wallet card shows detected/install badges; StellarWalletsKit modal opens with Freighter / Albedo / xBull |
 | `npm run lint` / `npm run build` | ✅ clean / builds |
 | Contract unit tests | ✅ 13 tests, run in CI (`cargo test --workspace`) |
-| CI on tip | ✅ GitHub Actions workflow added this round (`.github/workflows/ci.yml`) |
-| Commits on `main` | ✅ 26 (requirement: 12+) |
+| CI on tip | ✅ GitHub Actions run green on `main` (`.github/workflows/ci.yml`: cargo test + lint + build) |
+| Commits on `main` | ✅ 28 (requirement: 12+) |
 
 > Note: Soroban RPC's event-retention window has rolled past the Aug 28
 > transactions, so the in-app **event feed** is empty until a fresh payment is
@@ -83,7 +82,7 @@ four explicit points from the previous rejection.
 > - **Real-time events** — the contract emits typed `#[contractevent]`s; the
 >   frontend consumes them via Soroban RPC `getEvents` plus 8-second live
 >   status polling, shown in an in-app event feed.
-> - **Commit history** — 26 meaningful commits on `main` (was flagged as too
+> - **Commit history** — 28 meaningful commits on `main` (was flagged as too
 >   few; requirement 12+), plus CI (cargo test + lint + build) on every push.
 
 **Links**
