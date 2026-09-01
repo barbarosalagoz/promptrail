@@ -198,7 +198,12 @@ curl https://horizon-testnet.stellar.org/transactions/875ccf85104e3368f568615e32
 ```
 
 Re-completing payment `0` on the live contract correctly fails with
-`Error(Contract, #5)` (`NotPending`), and `get_payment_count` returns `3`.
+`Error(Contract, #5)` (`NotPending`), and `get_payment_count` returns `4`
+(payments `0`–`3`). You can re-check the live state any time without a wallet:
+
+```bash
+node scripts/verify-live.mjs
+```
 
 ### Frontend integration
 
